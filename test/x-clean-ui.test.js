@@ -32,6 +32,9 @@ const tick = (window) => new Promise((resolve) => window.setTimeout(resolve, 0))
 const homeTabs = (labels) => `<main><div data-testid="primaryColumn"><nav role="tablist">
   ${labels.map((label) => `<a role="tab" href="#${label}"><span>${label}</span></a>`).join('')}
 </nav></div></main>`;
+const mobileHomeTabs = (labels, selected = -1) => `<header><nav role="tablist">
+  ${labels.map((label, index) => `<a role="tab" aria-selected="${selected === index}" href="${index > 1 ? `/i/lists/${index + 100}` : '#home'}"><span>${label}</span></a>`).join('')}
+</nav></header>`;
 const selectableTabs = (labels, selected) => `<main><div data-testid="primaryColumn"><nav role="tablist">
   ${labels.map((label, index) => `<a role="tab" aria-selected="${index === selected}" href="${index > 1 ? `/i/lists/${index + 100}` : '#home'}"><span>${label}</span></a>`).join('')}
 </nav></div></main>`;
@@ -172,6 +175,53 @@ test('twitter.com mobile-width home and other routes use the same scoped rule', 
   assert.ok(tabs[1].classList.contains('x-clean-ui-home-tab'));
   const outsideHome = setup(t, homeTabs(['おすすめ', 'フォロー中', 'テック']), 'https://x.com/example');
   assert.equal(outsideHome.document.querySelectorAll('.x-clean-ui-home-tab').length, 0);
+});
+
+test('iPhone-style home tabs outside main and primaryColumn hide only defaults and retain custom lists', async (t) => {
+  const window = setup(t, mobileHomeTabs(['おすすめ', 'フォロー中', 'テック', 'AI', 'ゲーム'], 0), 'https://x.com/home');
+  Object.defineProperty(window, 'innerWidth', { value: 390 });
+  const { tabs, clicks } = trackSelections(window);
+  for (const [index, tab] of tabs.entries()) {
+    assert.equal(window.getComputedStyle(tab).display === 'none', index < 2, tab.textContent);
+  }
+  await tick(window);
+  assert.deepEqual(clicks, ['テック']);
+});
+
+test('new mobile home tablists are processed locally and never affect non-home tablists', async (t) => {
+  const window = setup(t, '<div role="tablist"><a role="tab">おすすめ</a></div>', 'https://twitter.com/home');
+  const { document } = window;
+  assert.equal(document.querySelector('.x-clean-ui-home-tab'), null);
+  const originalQuery = document.querySelectorAll.bind(document);
+  let scans = 0;
+  document.querySelectorAll = (...args) => { scans++; return originalQuery(...args); };
+  const wrapper = document.createElement('div');
+  wrapper.innerHTML = mobileHomeTabs(['おすすめ', 'フォロー中', 'サッカー', 'AI']);
+  document.body.append(wrapper);
+  await tick(window);
+  const tabs = wrapper.querySelectorAll('[role="tab"]');
+  assert.deepEqual([...tabs].map((tab) => window.getComputedStyle(tab).display === 'none'), [true, true, false, false]);
+  assert.equal(scans, 0);
+
+  window.history.pushState({}, '', '/search');
+  wrapper.querySelector('nav').append(document.createElement('span'));
+  await tick(window);
+  assert.deepEqual([...tabs].map((tab) => window.getComputedStyle(tab).display === 'none'), [false, false, false, false]);
+});
+
+test('mobile Home waits for both standard tabs and rechecks earlier siblings when the second appears', async (t) => {
+  const window = setup(t, mobileHomeTabs(['おすすめ', 'テック'], 0), 'https://x.com/home');
+  const list = window.document.querySelector('[role="tablist"]');
+  const [recommended, custom] = list.querySelectorAll('[role="tab"]');
+  assert.notEqual(window.getComputedStyle(recommended).display, 'none');
+  const following = window.document.createElement('a');
+  following.setAttribute('role', 'tab');
+  following.textContent = 'フォロー中';
+  custom.before(following);
+  await tick(window);
+  assert.equal(window.getComputedStyle(recommended).display, 'none');
+  assert.equal(window.getComputedStyle(following).display, 'none');
+  assert.notEqual(window.getComputedStyle(custom).display, 'none');
 });
 
 test('new or rerendered home tabs update without scanning the document again', async (t) => {

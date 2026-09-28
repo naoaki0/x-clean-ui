@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         x-clean-UI
 // @namespace    https://x.com/
-// @version      0.4.1
+// @version      0.4.2
 // @description  Simplify X posts and open the first visible custom Home timeline.
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -34,7 +34,7 @@
   const countPattern = /^[\s\d\u0660-\u0669\u06f0-\u06f9\uff10-\uff19]+(?:[.,，٫٬\s]*[\d\u0660-\u0669\u06f0-\u06f9\uff10-\uff19]+)*(?:[KMBTkmbt万千億])?\s*$/;
   const style = document.createElement('style');
   style.textContent = `.${countClass} { visibility: hidden !important; }
-${postSelector}.${adClass}, main [data-testid="primaryColumn"] ${homeTabSelector}.${homeTabClass} { display: none !important; }`;
+${postSelector}.${adClass}, [role="tab"].${homeTabClass} { display: none !important; }`;
   (document.head || document.documentElement).appendChild(style);
   const pageLocation = window.location;
   let homeTabList = null;
@@ -52,6 +52,18 @@ ${postSelector}.${adClass}, main [data-testid="primaryColumn"] ${homeTabSelector
     if (/(?:^|\/)(?:i\/)?lists\/\d+(?:[/?#]|$)/.test(href)) return false;
     const label = tab.textContent.replace(/\s+/g, ' ').trim() || (tab.getAttribute('aria-label') || '').trim();
     return defaultTabLabels.has(label);
+  }
+
+  function isHomeTimelineList(list) {
+    if (!isHome() || !list) return false;
+    if (list.closest('[data-testid="primaryColumn"]')) return true;
+    // On mobile the home tablist can live outside main/primaryColumn. Require
+    // both standard tabs so an unrelated tablist cannot be mistaken for Home.
+    const labels = new Set([...list.querySelectorAll('[role="tab"]')]
+      .filter((tab) => tab.closest('[role="tablist"]') === list && isDefaultTab(tab))
+      .map((tab) => tab.textContent.replace(/\s+/g, ' ').trim() || (tab.getAttribute('aria-label') || '').trim()));
+    return (labels.has('おすすめ') && labels.has('フォロー中')) ||
+      (labels.has('For you') && labels.has('Following'));
   }
 
   function openFirstCustomTimeline() {
@@ -85,10 +97,18 @@ ${postSelector}.${adClass}, main [data-testid="primaryColumn"] ${homeTabSelector
   function syncHomeTab(tab) {
     if (!tab.isConnected) return;
     const list = tab.closest('[role="tablist"]');
-    const primary = list && list.closest('[data-testid="primaryColumn"]');
-    if (primary && primary.closest('main')) homeTabList = list;
-    tab.classList.toggle(homeTabClass, !!(isHome() && primary && primary.closest('main') &&
-      isDefaultTab(tab)));
+    const isTimeline = isHomeTimelineList(list);
+    if (isTimeline && homeTabList !== list) {
+      homeTabList = list;
+      // A mobile tablist may gain its second standard tab after the first was
+      // processed. Recheck only this tablist when it becomes identifiable.
+      for (const sibling of list.querySelectorAll('[role="tab"]')) {
+        if (sibling.closest('[role="tablist"]') === list) {
+          sibling.classList.toggle(homeTabClass, isDefaultTab(sibling));
+        }
+      }
+    }
+    tab.classList.toggle(homeTabClass, !!(isTimeline && isDefaultTab(tab)));
   }
 
   function isAdLabel(element, post) {
