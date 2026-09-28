@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         x-clean-UI
 // @namespace    https://x.com/
-// @version      0.4.2
+// @version      0.5.0
 // @description  Simplify X posts and open the first visible custom Home timeline.
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -28,13 +28,15 @@
   const countClass = 'x-clean-ui-count';
   const adClass = 'x-clean-ui-ad';
   const homeTabClass = 'x-clean-ui-home-tab';
+  const postControlClass = 'x-clean-ui-post-control';
   const defaultTabLabels = new Set(['おすすめ', 'フォロー中', 'For you', 'Following']);
+  const explainPostLabel = /^(?:このポストを説明する|Explain this post)$/i;
   const adLabel = /^(?:Promoted|Sponsored|広告)$/i;
   const contentSelector = '[data-testid="tweetText"], [data-testid="quoteTweet"], [data-testid="card.wrapper"], [data-testid="media-container"], [data-testid="tweetPhoto"], [data-testid="videoPlayer"]';
   const countPattern = /^[\s\d\u0660-\u0669\u06f0-\u06f9\uff10-\uff19]+(?:[.,，٫٬\s]*[\d\u0660-\u0669\u06f0-\u06f9\uff10-\uff19]+)*(?:[KMBTkmbt万千億])?\s*$/;
   const style = document.createElement('style');
   style.textContent = `.${countClass} { visibility: hidden !important; }
-${postSelector}.${adClass}, [role="tab"].${homeTabClass} { display: none !important; }`;
+${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass} { display: none !important; }`;
   (document.head || document.documentElement).appendChild(style);
   const pageLocation = window.location;
   let homeTabList = null;
@@ -145,7 +147,22 @@ ${postSelector}.${adClass}, [role="tab"].${homeTabClass} { display: none !import
   }
 
   function syncPost(post) {
-    if (post.isConnected) post.classList.toggle(adClass, isAd(post));
+    if (!post.isConnected) return;
+    post.classList.toggle(adClass, isAd(post));
+
+    const controls = new Map();
+    for (const marker of post.querySelectorAll(`[data-testid="caret"], [aria-label], [title], .${postControlClass}`)) {
+      const control = marker.closest('button, [role="button"]');
+      if (!control || control.closest(postSelector) !== post) continue;
+      // Read the control's own label, not text/labels inside post content.
+      const label = control.getAttribute('aria-label') || control.getAttribute('title') || '';
+      controls.set(control, controls.get(control) || marker.matches('[data-testid="caret"]') ||
+        explainPostLabel.test(label.trim()));
+    }
+    for (const [control, target] of controls) {
+      control.classList.toggle(postControlClass, !!(target &&
+        !control.closest(`[role="group"], ${contentSelector}`)));
+    }
   }
 
   function isPostAction(action) {
@@ -240,7 +257,7 @@ ${postSelector}.${adClass}, [role="tab"].${homeTabClass} { display: none !import
     childList: true,
     characterData: true,
     attributes: true,
-    attributeFilter: ['class', 'data-testid', 'href', 'role', 'aria-label', 'aria-labelledby', 'aria-selected', 'aria-disabled', 'id'],
+    attributeFilter: ['class', 'data-testid', 'href', 'role', 'aria-label', 'aria-labelledby', 'aria-selected', 'aria-disabled', 'title', 'id'],
     subtree: true,
   });
 

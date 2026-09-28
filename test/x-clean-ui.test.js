@@ -141,6 +141,58 @@ test('existing action counts remain hidden and buttons clickable', (t) => {
   assert.equal(document.querySelector('[data-testid="tweetText"]').textContent, '2026 and 29');
 });
 
+test('hides only the post menu and Explain this post controls, not other More or Grok UI', (t) => {
+  const window = setup(t, `
+    <nav><button data-testid="caret" id="nav-more">もっと見る</button></nav>
+    <button aria-label="このポストを説明する" id="outside-explain"></button>
+    ${post('controls', `
+      <div data-testid="User-Name"><span>Author</span>
+        <div data-testid="caret" role="button" id="post-more">•••</div>
+        <button aria-label="このポストを説明する" id="post-explain"></button>
+        <button aria-label="Share" id="post-share"></button>
+      </div>`, 'もっと見る と このポストを説明する は本文の文字列', `
+      <a id="expand" href="/status/123">さらに表示</a>
+      <div data-testid="card.wrapper"><button aria-label="Explain this post" id="media-control"></button></div>
+      <div role="group"><button data-testid="caret" id="action-caret"></button></div>
+      <button id="nested-label"><svg aria-label="Explain this post"></svg></button>`)}
+    ${post('english', '<div role="button" title="Explain this post" id="english-explain"></div>')}`);
+  const { document } = window;
+  for (const id of ['post-more', 'post-explain', 'english-explain']) {
+    assert.equal(window.getComputedStyle(document.getElementById(id)).display, 'none', id);
+    assert.ok(document.getElementById(id).isConnected);
+  }
+  for (const id of ['nav-more', 'outside-explain', 'post-share', 'expand', 'media-control', 'action-caret', 'nested-label']) {
+    assert.notEqual(window.getComputedStyle(document.getElementById(id)).display, 'none', id);
+  }
+  assert.match(document.querySelector('[data-testid="tweetText"]').textContent, /もっと見る/);
+});
+
+test('new post controls and React updates stay scoped to the changed post', async (t) => {
+  const window = setup(t, post('original', ''));
+  const { document } = window;
+  const originalQuery = document.querySelectorAll.bind(document);
+  let fullScans = 0;
+  document.querySelectorAll = (...args) => { fullScans++; return originalQuery(...args); };
+
+  const added = document.createElement('div');
+  added.innerHTML = post('later', '<button data-testid="caret" id="later-more"></button>');
+  document.body.append(added);
+  await tick(window);
+  assert.equal(window.getComputedStyle(document.getElementById('later-more')).display, 'none');
+  const explain = document.createElement('button');
+  explain.setAttribute('aria-label', 'Explain this post');
+  document.getElementById('later').prepend(explain);
+  await tick(window);
+  assert.equal(window.getComputedStyle(explain).display, 'none');
+  explain.className = '';
+  await tick(window);
+  assert.equal(window.getComputedStyle(explain).display, 'none', 'class rewrite');
+  explain.setAttribute('aria-label', 'Share');
+  await tick(window);
+  assert.notEqual(window.getComputedStyle(explain).display, 'none', 'other button restored');
+  assert.equal(fullScans, 0);
+});
+
 test('home timeline hides only For you and Following tabs in Japanese and English', (t) => {
   const window = setup(t, homeTabs(['テック', 'おすすめ', 'AI', 'フォロー中', 'ゲーム', 'ソフトウェア', 'For you', 'Following']));
   const tabs = [...window.document.querySelectorAll('[role="tab"]')];
