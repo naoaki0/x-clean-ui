@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         x-clean-UI
 // @namespace    https://x.com/
-// @version      0.5.0
+// @version      0.5.1
 // @description  Simplify X posts and open the first visible custom Home timeline.
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -30,7 +30,7 @@
   const homeTabClass = 'x-clean-ui-home-tab';
   const postControlClass = 'x-clean-ui-post-control';
   const defaultTabLabels = new Set(['おすすめ', 'フォロー中', 'For you', 'Following']);
-  const explainPostLabel = /^(?:このポストを説明する|Explain this post)$/i;
+  const explainPostLabel = /^(?:このポストを説明する|Explain this post|Grok actions)$/i;
   const adLabel = /^(?:Promoted|Sponsored|広告)$/i;
   const contentSelector = '[data-testid="tweetText"], [data-testid="quoteTweet"], [data-testid="card.wrapper"], [data-testid="media-container"], [data-testid="tweetPhoto"], [data-testid="videoPlayer"]';
   const countPattern = /^[\s\d\u0660-\u0669\u06f0-\u06f9\uff10-\uff19]+(?:[.,，٫٬\s]*[\d\u0660-\u0669\u06f0-\u06f9\uff10-\uff19]+)*(?:[KMBTkmbt万千億])?\s*$/;

@@ -193,6 +193,27 @@ test('new post controls and React updates stay scoped to the changed post', asyn
   assert.equal(fullScans, 0);
 });
 
+test('Grok actions in a post header is hidden when its Japanese tooltip is separate', async (t) => {
+  const window = setup(t, `
+    <button aria-label="Grok actions" id="outside-grok"></button>
+    <div role="tooltip">このポストを説明する</div>
+    ${post('grok', `<div data-testid="User-Name">
+      <button aria-label="Grok actions" id="post-grok"><svg></svg></button>
+    </div>`, '本文中のGrok actionsは残る', `
+      <div role="group"><button aria-label="Grok actions" id="footer-grok"></button></div>
+      <div data-testid="card.wrapper"><button aria-label="Grok actions" id="card-grok"></button></div>`)}`);
+  const { document } = window;
+  const button = document.getElementById('post-grok');
+  assert.equal(window.getComputedStyle(button).display, 'none');
+  assert.ok(button.isConnected);
+  for (const id of ['outside-grok', 'footer-grok', 'card-grok']) {
+    assert.notEqual(window.getComputedStyle(document.getElementById(id)).display, 'none', id);
+  }
+  button.setAttribute('aria-label', 'Share');
+  await tick(window);
+  assert.notEqual(window.getComputedStyle(button).display, 'none');
+});
+
 test('home timeline hides only For you and Following tabs in Japanese and English', (t) => {
   const window = setup(t, homeTabs(['テック', 'おすすめ', 'AI', 'フォロー中', 'ゲーム', 'ソフトウェア', 'For you', 'Following']));
   const tabs = [...window.document.querySelectorAll('[role="tab"]')];
