@@ -17,6 +17,13 @@ const post = (id, header, content = 'ordinary text', extra = '') => `
       <a href="/user/status/123/analytics" id="${id}-views"><svg></svg><span>1.3万</span></a>
     </div>
   </article>`;
+const statusPost = (id, statusId) => post(id,
+  `<a href="/user/status/${statusId}"><time datetime="2026-09-30">午後2:34</time></a>`,
+  '本文中の2026と135は残す', `
+    <a href="/user/status/${statusId}/analytics" id="${id}-detail-views"><span><span>4.8万</span> 件の表示</span></a>
+    <div role="group"><button data-testid="bookmark" id="${id}-bookmark"><svg></svg><span>135</span></button></div>
+    <div data-testid="quoteTweet"><a href="/user/status/123"><time>引用の時刻</time></a></div>
+    <div data-testid="tweetText"><a href="/user/status/123/analytics" id="${id}-body-link"><span>2026</span></a></div>`);
 
 function setup(t, html, url = 'https://x.com/home') {
   const dom = new JSDOM(`<!doctype html><html><head></head><body>${html}</body></html>`, {
@@ -139,6 +146,70 @@ test('existing action counts remain hidden and buttons clickable', (t) => {
   document.getElementById('normal-like').click();
   assert.equal(clicks, 1);
   assert.equal(document.querySelector('[data-testid="tweetText"]').textContent, '2026 and 29');
+});
+
+test('only the opened post shows reply and like counts on desktop and mobile detail routes', (t) => {
+  for (const url of ['https://x.com/user/status/123', 'https://twitter.com/i/web/status/123']) {
+    const window = setup(t, statusPost('parent', '111') + statusPost('opened', '123') + statusPost('reply-post', '456'), url);
+    const { document } = window;
+    for (const id of ['parent', 'opened', 'reply-post']) {
+      for (const type of ['reply', 'like', 'retweet', 'views']) {
+        const action = document.getElementById(`${id}-${type}`);
+        const visible = id === 'opened' && ['reply', 'like'].includes(type);
+        assert.equal(window.getComputedStyle(action.querySelector('span')).visibility, visible ? 'visible' : 'hidden', `${id}-${type}`);
+        assert.equal(window.getComputedStyle(action).visibility, 'visible');
+      }
+    }
+    assert.equal(window.getComputedStyle(document.querySelector('#opened-detail-views span span')).visibility, 'hidden');
+    assert.equal(window.getComputedStyle(document.querySelector('#opened-bookmark span')).visibility, 'hidden');
+    assert.equal(window.getComputedStyle(document.querySelector('#opened-body-link span')).visibility, 'visible');
+    const like = document.getElementById('opened-like');
+    let clicks = 0;
+    like.addEventListener('click', () => clicks++);
+    like.click();
+    assert.equal(clicks, 1);
+  }
+});
+
+test('detail count exceptions follow SPA entry, another post, Back and delayed timestamp rendering without document rescans', async (t) => {
+  const window = setup(t, statusPost('first', '123') + statusPost('second', '456'));
+  const { document } = window;
+  const originalQuery = document.querySelectorAll.bind(document);
+  let scans = 0;
+  document.querySelectorAll = (...args) => { scans++; return originalQuery(...args); };
+  const visibility = (id) => window.getComputedStyle(document.querySelector(`#${id}-like span`)).visibility;
+  assert.equal(visibility('first'), 'hidden');
+  window.history.pushState({}, '', '/user/status/123');
+  document.body.append(document.createElement('div'));
+  await tick(window);
+  assert.equal(visibility('first'), 'visible');
+  assert.equal(visibility('second'), 'hidden');
+  const firstLike = document.getElementById('first-like');
+  firstLike.setAttribute('data-testid', 'unlike');
+  firstLike.querySelector('span').textContent = '710';
+  await tick(window);
+  assert.equal(visibility('first'), 'visible');
+
+  window.history.pushState({}, '', '/user/status/456');
+  document.body.append(document.createElement('div'));
+  await tick(window);
+  assert.equal(visibility('first'), 'hidden');
+  assert.equal(visibility('second'), 'visible');
+  window.history.replaceState({}, '', '/home');
+  window.dispatchEvent(new window.PopStateEvent('popstate'));
+  await tick(window);
+  assert.equal(visibility('second'), 'hidden');
+
+  window.history.pushState({}, '', '/user/status/789');
+  const wrapper = document.createElement('div');
+  wrapper.innerHTML = post('delayed', '');
+  document.body.append(wrapper);
+  await tick(window);
+  assert.equal(visibility('delayed'), 'hidden');
+  document.getElementById('delayed').insertAdjacentHTML('afterbegin', '<a href="/user/status/789"><time>時刻</time></a>');
+  await tick(window);
+  assert.equal(visibility('delayed'), 'visible');
+  assert.equal(scans, 0);
 });
 
 test('hides only the post menu and Explain this post controls, not other More or Grok UI', (t) => {

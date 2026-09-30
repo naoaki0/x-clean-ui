@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         x-clean-UI
 // @namespace    https://x.com/
-// @version      0.5.1
+// @version      0.6.0
 // @description  Simplify X posts and open the first visible custom Home timeline.
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -21,6 +21,8 @@
     '[data-testid="like"]',
     '[data-testid="unlike"]',
     '[data-testid="viewCount"]',
+    '[data-testid="bookmark"]',
+    '[data-testid="removeBookmark"]',
     'a[href*="/analytics"]',
   ].join(',');
   const postSelector = 'article[data-testid="tweet"]';
@@ -39,6 +41,7 @@
 ${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass} { display: none !important; }`;
   (document.head || document.documentElement).appendChild(style);
   const pageLocation = window.location;
+  const knownPosts = new Set();
   let homeTabList = null;
   let lastPath = pageLocation.pathname;
   let pendingTab = null;
@@ -147,7 +150,11 @@ ${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass} {
   }
 
   function syncPost(post) {
-    if (!post.isConnected) return;
+    if (!post.isConnected) {
+      knownPosts.delete(post);
+      return;
+    }
+    knownPosts.add(post);
     post.classList.toggle(adClass, isAd(post));
 
     const controls = new Map();
@@ -163,21 +170,45 @@ ${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass} {
       control.classList.toggle(postControlClass, !!(target &&
         !control.closest(`[role="group"], ${contentSelector}`)));
     }
+    // A timestamp/self-link can arrive after the action buttons render.
+    for (const action of post.querySelectorAll(actionSelector)) syncAction(action);
+  }
+
+  function statusId(path) {
+    return path.match(/^\/(?:[^/]+\/status|i\/web\/status)\/(\d+)\/?$/)?.[1] || null;
+  }
+
+  function isOpenedPost(post) {
+    const id = statusId(pageLocation.pathname);
+    if (!id) return false;
+    // Match the post's own timestamp, not quoted links, media or thread order.
+    for (const time of post.querySelectorAll('a[href] time')) {
+      if (time.closest(postSelector) !== post || time.closest(contentSelector)) continue;
+      const link = time.closest('a[href]');
+      const url = new URL(link.href, pageLocation.href);
+      if (url.origin === pageLocation.origin && statusId(url.pathname) === id) return true;
+    }
+    return false;
   }
 
   function isPostAction(action) {
     const post = action.closest(postSelector);
     const group = action.closest('[role="group"]');
-    if (!post || !group || group.closest(postSelector) !== post) return false;
+    if (!post || action.closest(contentSelector)) return false;
 
     if (action.matches('a[href*="/analytics"]')) {
-      return /(?:^|\/)status\/\d+\/analytics\/?(?:[?#]|$)/.test(action.getAttribute('href') || '');
+      return !action.querySelector('time') &&
+        /(?:^|\/)status\/\d+\/analytics\/?(?:[?#]|$)/.test(action.getAttribute('href') || '');
     }
-    return true;
+    return !!(group && group.closest(postSelector) === post);
   }
 
   function syncAction(action) {
     if (!action.isConnected || !isPostAction(action)) return;
+    const opened = isOpenedPost(action.closest(postSelector));
+    const bookmark = action.matches('[data-testid="bookmark"], [data-testid="removeBookmark"]');
+    const show = opened && action.matches('[data-testid="reply"], [data-testid="like"], [data-testid="unlike"]');
+    const hide = !show && (!bookmark || opened);
 
     // X normally gives the animated count a dedicated container. Only use it
     // when its contents are a count; never hide the whole action or its icon.
@@ -186,14 +217,14 @@ ${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass} {
     for (const element of candidates) {
       if (element.querySelector('svg, button, a, [role="button"]')) continue;
       if (countPattern.test(element.textContent.trim())) {
-        element.classList.add(countClass);
+        element.classList.toggle(countClass, hide);
         break;
       }
     }
 
     // React may reuse a count element for non-count text.
     for (const element of action.querySelectorAll(`.${countClass}`)) {
-      if (!countPattern.test(element.textContent.trim())) element.classList.remove(countClass);
+      if (!hide || !countPattern.test(element.textContent.trim())) element.classList.remove(countClass);
     }
   }
 
@@ -231,6 +262,11 @@ ${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass} {
     for (const record of records) {
       if (record.type === 'childList') {
         for (const node of record.addedNodes) collectAdded(node, actions, posts, tabs);
+        for (const node of record.removedNodes) {
+          if (node.nodeType !== Node.ELEMENT_NODE) continue;
+          knownPosts.delete(node);
+          for (const post of node.querySelectorAll(postSelector)) knownPosts.delete(post);
+        }
         // A removed/replaced count can change which number is visible.
         if (record.removedNodes.length) collectClosest(record.target, actions, posts, tabs);
       } else if (record.type === 'characterData') {
@@ -243,6 +279,8 @@ ${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass} {
     if (pathChanged) {
       lastPath = pageLocation.pathname;
       pendingTab = null;
+      // Route changes are rare; recheck tracked posts, not the whole document.
+      for (const post of knownPosts) posts.add(post);
       if (homeTabList && homeTabList.isConnected) {
         for (const tab of homeTabList.querySelectorAll('[role="tab"]')) tabs.add(tab);
       }
@@ -262,7 +300,10 @@ ${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass} {
   });
 
   window.addEventListener('popstate', () => {
-    if (pageLocation.pathname !== lastPath) pendingTab = null;
+    if (pageLocation.pathname !== lastPath) {
+      pendingTab = null;
+      for (const post of knownPosts) syncPost(post);
+    }
     if (homeTabList && homeTabList.isConnected) {
       for (const tab of homeTabList.querySelectorAll('[role="tab"]')) syncHomeTab(tab);
     }
