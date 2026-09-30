@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         x-clean-UI
 // @namespace    https://x.com/
-// @version      0.7.0
+// @version      0.7.1
 // @description  Simplify X posts and open the first visible custom Home timeline.
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -39,7 +39,9 @@
   const countPattern = /^[\s\d\u0660-\u0669\u06f0-\u06f9\uff10-\uff19]+(?:[.,，٫٬\s]*[\d\u0660-\u0669\u06f0-\u06f9\uff10-\uff19]+)*(?:[KMBTkmbt万千億])?\s*$/;
   const style = document.createElement('style');
   style.textContent = `.${countClass} { visibility: hidden !important; }
-${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass}, .${actionRowClass} { display: none !important; }`;
+${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass} { display: none !important; }
+.${actionRowClass} { display: block !important; height: 32px !important; min-height: 32px !important; pointer-events: none !important; }
+.${actionRowClass} > * { display: none !important; }`;
   (document.head || document.documentElement).appendChild(style);
   const pageLocation = window.location;
   const knownPosts = new Set();
@@ -172,8 +174,8 @@ ${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass}, 
         !control.closest(`[role="group"], ${contentSelector}`)));
     }
     const opened = isOpenedPost(post);
-    // Hide the semantic action group itself so share and the row's spacing
-    // disappear too. Never collapse media controls or unrelated role=group UI.
+    // Replace the action group's buttons with a blank spacer. Never change
+    // media controls or unrelated role=group UI.
     for (const group of post.querySelectorAll(`[role="group"], .${actionRowClass}`)) {
       if (group.closest(postSelector) !== post) continue;
       const isRow = group.matches('[role="group"]') && !group.closest(contentSelector) &&
