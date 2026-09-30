@@ -294,6 +294,19 @@ test('Grok actions in a post header is hidden when its Japanese tooltip is separ
   assert.notEqual(window.getComputedStyle(button).display, 'none');
 });
 
+test('the captured Japanese Grok action button is hidden only within posts', (t) => {
+  const button = (id) => `<button id="${id}" aria-label="Grokのアクション" role="button" type="button"><div><svg viewBox="0 0 33 32" aria-hidden="true"><g><path d="M12.745 20.54"></path></g></svg></div></button>`;
+  const window = setup(t, `<nav>${button('nav-grok')}</nav><div data-testid="GrokDrawer">${button('drawer-grok')}</div>` +
+    post('jp-grok', button('post-jp-grok'), 'Grokのアクション', `<div data-testid="card.wrapper">${button('card-jp-grok')}</div>`));
+  const { document } = window;
+  assert.equal(window.getComputedStyle(document.getElementById('post-jp-grok')).display, 'none');
+  assert.ok(document.getElementById('post-jp-grok').isConnected);
+  for (const id of ['nav-grok', 'drawer-grok', 'card-jp-grok']) {
+    assert.notEqual(window.getComputedStyle(document.getElementById(id)).display, 'none', id);
+  }
+  assert.equal(document.querySelector('[data-testid="tweetText"]').textContent, 'Grokのアクション');
+});
+
 test('home timeline hides only For you and Following tabs in Japanese and English', (t) => {
   const window = setup(t, homeTabs(['テック', 'おすすめ', 'AI', 'フォロー中', 'ゲーム', 'ソフトウェア', 'For you', 'Following']));
   const tabs = [...window.document.querySelectorAll('[role="tab"]')];
