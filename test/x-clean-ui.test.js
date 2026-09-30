@@ -25,17 +25,41 @@ const statusPost = (id, statusId) => post(id,
     <div data-testid="quoteTweet"><a href="/user/status/123"><time>引用の時刻</time></a></div>
     <div data-testid="tweetText"><a href="/user/status/123/analytics" id="${id}-body-link"><span>2026</span></a></div>`);
 
-function setup(t, html, url = 'https://x.com/home') {
+function setup(t, html, url = 'https://x.com/home', beforeRun) {
   const dom = new JSDOM(`<!doctype html><html><head></head><body>${html}</body></html>`, {
     url,
     runScripts: 'outside-only',
   });
   t.after(() => dom.window.close());
+  beforeRun?.(dom.window);
   dom.window.eval(script);
   return dom.window;
 }
 
 const tick = (window) => new Promise((resolve) => window.setTimeout(resolve, 0));
+const quoteTick = async (window) => { await tick(window); await tick(window); await tick(window); };
+const quote = (id, lines, media = 'photo', attributes = 'data-testid="quoteTweet"') => `<div ${attributes} id="${id}">
+  <div data-testid="User-Name">引用元</div>
+  <div data-testid="tweetText" data-test-lines="${lines}" id="${id}-text">引用本文 ${'長い説明。'.repeat(lines)}</div>
+  ${media === 'photo' ? `<a role="link"><div data-testid="tweetPhoto"><img id="${id}-media" src="https://example.com/photo.png" width="300" height="200"></div></a>` :
+    media === 'video' ? `<div data-testid="videoPlayer"><video id="${id}-media" controls width="300" height="200"></video></div>` : ''}
+</div>`;
+
+function quoteLayout(window) {
+  // JSDOM does not lay out text. Mock browser geometry here; real layout is
+  // verified separately in Chromium, including wrapping and exact three lines.
+  Object.defineProperty(window.HTMLElement.prototype, 'clientHeight', { configurable: true, get() {
+    const lines = Number(this.dataset.testLines || 0);
+    return (this.classList.contains('x-clean-ui-quote-clamped') ? Math.min(lines, 3) : lines) * 20;
+  } });
+  Object.defineProperty(window.HTMLElement.prototype, 'scrollHeight', { configurable: true, get() {
+    return Number(this.dataset.testLines || 0) * 20;
+  } });
+  const originalRect = window.HTMLElement.prototype.getBoundingClientRect;
+  window.HTMLElement.prototype.getBoundingClientRect = function () {
+    return this.hasAttribute('data-test-lines') ? { width: 300, top: 100, height: this.clientHeight } : originalRect.call(this);
+  };
+}
 const homeTabs = (labels) => `<main><div data-testid="primaryColumn"><nav role="tablist">
   ${labels.map((label) => `<a role="tab" href="#${label}"><span>${label}</span></a>`).join('')}
 </nav></div></main>`;
@@ -56,6 +80,141 @@ function trackSelections(window) {
   });
   return { tabs, clicks };
 }
+
+test('only media quote text over three rendered lines is clamped; main text, short quotes and media stay intact', async (t) => {
+  const window = setup(t, post('quotes', '', '通常本文は全文表示',
+    quote('photo', 6) + quote('video', 5, 'video') + quote('short', 2) + quote('exact', 3) + quote('text-only', 8, '') + quote('role-quote', 5, 'photo', 'role="link"')),
+  'https://x.com/home', quoteLayout);
+  const { document } = window;
+  const originalMedia = [...document.querySelectorAll('img, video')].map((media) => media.outerHTML);
+  const main = document.querySelector('#quotes > [data-testid="tweetText"]');
+  const mainHTML = main.outerHTML;
+  await quoteTick(window);
+  assert.equal(main.outerHTML, mainHTML);
+  for (const id of ['photo', 'video', 'role-quote']) {
+    const text = document.getElementById(`${id}-text`);
+    assert.equal(window.getComputedStyle(text).getPropertyValue('-webkit-line-clamp'), '3');
+    assert.equal(document.getElementById(id).querySelectorAll('.x-clean-ui-quote-toggle').length, 1);
+    assert.equal(text.nextSibling.textContent, '続きを読む');
+  }
+  for (const id of ['short', 'exact', 'text-only']) {
+    assert.equal(document.getElementById(id).querySelector('.x-clean-ui-quote-toggle'), null);
+    assert.equal(document.getElementById(`${id}-text`).classList.contains('x-clean-ui-quote-clamped'), false);
+  }
+  assert.deepEqual([...document.querySelectorAll('img, video')].map((media) => media.outerHTML), originalMedia);
+  await quoteTick(window);
+  let idleMutations = 0;
+  const observer = new window.MutationObserver((records) => { idleMutations += records.length; });
+  observer.observe(document.body, { attributes: true, childList: true, subtree: true });
+  await quoteTick(window);
+  observer.disconnect();
+  assert.equal(idleMutations, 0, 'quote processing must settle, not generate an idle mutation loop');
+});
+
+test('quote toggle expands inline without parent navigation, while quote and media clicks retain native handlers', async (t) => {
+  const window = setup(t, post('toggle', '', '本文', quote('interactive', 7, 'video')), 'https://x.com/home', quoteLayout);
+  await quoteTick(window);
+  const { document } = window;
+  const container = document.getElementById('interactive');
+  const text = document.getElementById('interactive-text');
+  const button = container.querySelector('.x-clean-ui-quote-toggle');
+  let parentClicks = 0;
+  let mediaClicks = 0;
+  let pointerDowns = 0;
+  container.addEventListener('click', () => parentClicks++);
+  container.addEventListener('pointerdown', () => pointerDowns++);
+  document.getElementById('interactive-media').addEventListener('click', () => mediaClicks++);
+  document.documentElement.scrollTop = 320;
+  button.dispatchEvent(new window.Event('pointerdown', { bubbles: true }));
+  const click = new window.MouseEvent('click', { bubbles: true, cancelable: true });
+  button.dispatchEvent(click);
+  await quoteTick(window);
+  assert.equal(click.defaultPrevented, true);
+  assert.equal(pointerDowns, 0);
+  assert.equal(parentClicks, 0);
+  assert.equal(text.classList.contains('x-clean-ui-quote-expanded'), true);
+  assert.equal(text.classList.contains('x-clean-ui-quote-clamped'), false);
+  assert.equal(button.textContent, '折りたたむ');
+  assert.equal(button.getAttribute('aria-expanded'), 'true');
+  assert.equal(document.documentElement.scrollTop, 320);
+  assert.equal(window.location.pathname, '/home');
+  button.click();
+  await quoteTick(window);
+  assert.equal(text.classList.contains('x-clean-ui-quote-clamped'), true);
+  assert.equal(button.textContent, '続きを読む');
+  assert.equal(button.getAttribute('aria-expanded'), 'false');
+  assert.equal(parentClicks, 0);
+  document.getElementById('interactive-media').click();
+  container.click();
+  assert.equal(mediaClicks, 1);
+  assert.equal(parentClicks, 2);
+  assert.equal(text.classList.contains('x-clean-ui-quote-clamped'), true);
+});
+
+test('dynamic quote updates are idempotent, reset reused text, respond to width changes and remove stale controls', async (t) => {
+  const window = setup(t, post('initial', '', '本文'), 'https://x.com/home', quoteLayout);
+  const { document } = window;
+  const originalQuery = document.querySelectorAll.bind(document);
+  let scans = 0;
+  document.querySelectorAll = (...args) => { scans++; return originalQuery(...args); };
+  const wrapper = document.createElement('div');
+  wrapper.innerHTML = post('added', '', '本文', quote('dynamic', 6));
+  document.body.append(wrapper);
+  await quoteTick(window);
+  const text = document.getElementById('dynamic-text');
+  const container = document.getElementById('dynamic');
+  const button = container.querySelector('.x-clean-ui-quote-toggle');
+  for (let i = 0; i < 3; i++) container.append(document.createElement('span'));
+  await quoteTick(window);
+  assert.equal(container.querySelectorAll('.x-clean-ui-quote-toggle').length, 1);
+  button.click();
+  await quoteTick(window);
+  assert.equal(button.textContent, '折りたたむ', 'listener is not duplicated');
+  text.className = '';
+  await quoteTick(window);
+  assert.equal(button.textContent, '続きを読む');
+  assert.equal(text.classList.contains('x-clean-ui-quote-clamped'), true);
+
+  text.dataset.testLines = '2';
+  text.textContent = '短く更新';
+  await quoteTick(window);
+  assert.equal(container.querySelector('.x-clean-ui-quote-toggle'), null);
+  assert.equal(text.classList.contains('x-clean-ui-quote-clamped'), false);
+  text.dataset.testLines = '5';
+  window.dispatchEvent(new window.Event('resize'));
+  await quoteTick(window);
+  assert.equal(container.querySelectorAll('.x-clean-ui-quote-toggle').length, 1);
+  container.querySelector('a').remove();
+  await quoteTick(window);
+  assert.equal(container.querySelector('.x-clean-ui-quote-toggle'), null);
+  assert.equal(text.classList.contains('x-clean-ui-quote-text'), false);
+  container.insertAdjacentHTML('beforeend', '<div data-testid="videoPlayer"><video controls></video></div>');
+  await quoteTick(window);
+  assert.equal(container.querySelectorAll('.x-clean-ui-quote-toggle').length, 1, 'late media activates the existing quote text');
+  container.removeAttribute('data-testid');
+  await quoteTick(window);
+  assert.equal(container.querySelector('.x-clean-ui-quote-toggle'), null, 'no longer a quote');
+
+  window.history.pushState({}, '', '/i/lists/123');
+  wrapper.innerHTML = post('refreshed', '', '本文', quote('replacement', 5, 'video'));
+  await quoteTick(window);
+  assert.equal(wrapper.querySelectorAll('.x-clean-ui-quote-toggle').length, 1);
+  assert.equal(button.isConnected, false);
+  assert.equal(scans, 0);
+});
+
+test('generic post links and preview cards are not mistaken for media quotes', async (t) => {
+  const window = setup(t, `<div role="link">${post('normal-link', '', '通常の本文', quote('card', 7, 'photo', 'data-testid="card.wrapper" role="link"'))}</div>`,
+    'https://x.com/home', quoteLayout);
+  const postElement = window.document.getElementById('normal-link');
+  const wrapper = window.document.createElement('div');
+  wrapper.setAttribute('role', 'link');
+  wrapper.innerHTML = '<div data-testid="tweetText" data-test-lines="8">通常の本文を囲むリンク</div><div data-testid="tweetPhoto"><img></div><div role="group"><button data-testid="reply"></button></div>';
+  postElement.append(wrapper);
+  await quoteTick(window);
+  assert.equal(postElement.querySelector('.x-clean-ui-quote-toggle'), null);
+  assert.equal(postElement.querySelector('.x-clean-ui-quote-clamped'), null);
+});
 
 test('independent Japanese, Promoted and Sponsored labels hide the entire article without placementTracking', (t) => {
   const window = setup(t, [

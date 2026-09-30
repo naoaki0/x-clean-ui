@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         x-clean-UI
 // @namespace    https://x.com/
-// @version      0.7.3
+// @version      0.8.0
 // @description  Simplify X posts and open the first visible custom Home timeline.
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -32,6 +32,12 @@
   const homeTabClass = 'x-clean-ui-home-tab';
   const postControlClass = 'x-clean-ui-post-control';
   const shareClass = 'x-clean-ui-share';
+  const quoteSelector = '[data-testid="quoteTweet"], [role="link"]';
+  const quoteMediaSelector = '[data-testid="tweetPhoto"], [data-testid="videoPlayer"], [data-testid="videoComponent"], video';
+  const quoteTextClass = 'x-clean-ui-quote-text';
+  const quoteClampClass = 'x-clean-ui-quote-clamped';
+  const quoteExpandedClass = 'x-clean-ui-quote-expanded';
+  const quoteToggleClass = 'x-clean-ui-quote-toggle';
   const defaultTabLabels = new Set(['おすすめ', 'フォロー中', 'For you', 'Following']);
   const explainPostLabel = /^(?:このポストを説明する|Explain this post|Grok actions|Grokのアクション)$/i;
   const sharePostLabel = /^(?:ポストを共有|共有|Share post|Share)$/i;
@@ -40,10 +46,27 @@
   const countPattern = /^[\s\d\u0660-\u0669\u06f0-\u06f9\uff10-\uff19]+(?:[.,，٫٬\s]*[\d\u0660-\u0669\u06f0-\u06f9\uff10-\uff19]+)*(?:[KMBTkmbt万千億])?\s*$/;
   const style = document.createElement('style');
   style.textContent = `.${countClass} { visibility: hidden !important; }
-${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass}, .${shareClass} { display: none !important; }`;
+${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass}, .${shareClass} { display: none !important; }
+.${quoteClampClass} { display: -webkit-box !important; -webkit-box-orient: vertical !important; -webkit-line-clamp: 3 !important; line-clamp: 3; overflow: hidden !important; }
+.${quoteExpandedClass} { display: block !important; -webkit-line-clamp: unset !important; line-clamp: unset; max-height: none !important; overflow: visible !important; }
+.${quoteToggleClass} { appearance: none; border: 0; background: none; color: #1d9bf0; font: inherit; padding: 0; margin-top: 2px; display: block; text-align: start; cursor: pointer; }`;
   (document.head || document.documentElement).appendChild(style);
   const pageLocation = window.location;
   const knownPosts = new Set();
+  const quoteStates = new WeakMap();
+  const quoteTexts = new Set();
+  const pendingQuoteTexts = new Set();
+  const nextFrame = window.requestAnimationFrame ? window.requestAnimationFrame.bind(window) : (callback) => window.setTimeout(callback, 0);
+  let quoteFrame = null;
+  const quoteResizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver((entries) => {
+    for (const { target } of entries) {
+      const state = quoteStates.get(target);
+      if (state && (target.getBoundingClientRect().width !== state.width || target.clientHeight !== state.height)) {
+        state.needsMeasure = true;
+        scheduleQuoteText(target);
+      }
+    }
+  }) : null;
   let homeTabList = null;
   let lastPath = pageLocation.pathname;
   let pendingTab = null;
@@ -182,7 +205,162 @@ ${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass}, 
     }
     // A timestamp/self-link can arrive after the action buttons render.
     for (const action of post.querySelectorAll(actionSelector)) syncAction(action);
+    syncQuotes(post);
   }
+
+  function scheduleQuoteText(text) {
+    pendingQuoteTexts.add(text);
+    if (quoteFrame !== null) return;
+    quoteFrame = nextFrame(() => {
+      quoteFrame = null;
+      const texts = [...pendingQuoteTexts];
+      pendingQuoteTexts.clear();
+      for (const text of texts) {
+        const state = quoteStates.get(text);
+        if (state) renderQuoteText(state);
+      }
+    });
+  }
+
+  function removeQuoteText(text) {
+    const state = quoteStates.get(text);
+    if (!state) return;
+    state.button.remove();
+    text.classList.remove(quoteTextClass, quoteClampClass, quoteExpandedClass);
+    quoteResizeObserver?.unobserve(text);
+    quoteStates.delete(text);
+    quoteTexts.delete(text);
+    pendingQuoteTexts.delete(text);
+  }
+
+  function removeQuotesIn(root) {
+    if (root.nodeType !== Node.ELEMENT_NODE) return;
+    removeQuoteText(root);
+    for (const text of root.querySelectorAll(`[data-testid="tweetText"], .${quoteTextClass}`)) removeQuoteText(text);
+  }
+
+  function renderQuoteText(state) {
+    const { text, button } = state;
+    if (!text.isConnected) {
+      removeQuoteText(text);
+      return;
+    }
+    if (!text.classList.contains(quoteTextClass)) text.classList.add(quoteTextClass);
+    if (state.needsMeasure) {
+      // Measure the actual three-line box, not a character-count estimate.
+      // Expanded text is briefly measured collapsed and restored before paint.
+      text.classList.remove(quoteExpandedClass);
+      text.classList.add(quoteClampClass);
+      state.overflow = text.clientHeight > 0 && text.scrollHeight > text.clientHeight + 1;
+      state.needsMeasure = false;
+    }
+    if (!state.overflow) state.expanded = false;
+    text.classList.toggle(quoteClampClass, state.overflow && !state.expanded);
+    text.classList.toggle(quoteExpandedClass, state.overflow && state.expanded);
+    state.width = text.getBoundingClientRect().width;
+    state.height = text.clientHeight;
+    if (!state.overflow) {
+      button.remove();
+      return;
+    }
+    const label = state.expanded ? '折りたたむ' : '続きを読む';
+    if (button.textContent !== label) button.textContent = label;
+    button.setAttribute('aria-expanded', String(state.expanded));
+    if (text.nextSibling !== button) text.after(button);
+  }
+
+  function toggleQuoteText(event, state) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (!state.overflow || !state.text.isConnected) return;
+    const top = state.text.getBoundingClientRect().top;
+    let scroller = state.text.parentElement;
+    while (scroller && !(/auto|scroll/.test(window.getComputedStyle(scroller).overflowY) && scroller.scrollHeight > scroller.clientHeight)) {
+      scroller = scroller.parentElement;
+    }
+    scroller ||= document.scrollingElement || document.documentElement;
+    const scrollTop = scroller.scrollTop;
+    state.expanded = !state.expanded;
+    renderQuoteText(state);
+    scroller.scrollTop = scrollTop;
+    // Compensate native scroll anchoring using the unchanged top of the text.
+    nextFrame(() => {
+      if (state.text.isConnected) {
+        const delta = state.text.getBoundingClientRect().top - top;
+        if (Math.abs(delta) > 1) scroller.scrollTop += delta;
+      }
+    });
+  }
+
+  function syncQuotes(post) {
+    const eligible = new Set();
+    for (const quote of post.querySelectorAll(quoteSelector)) {
+      if (quote.matches(postSelector) || quote.closest(postSelector) !== post ||
+          quote.closest('[data-testid="tweetText"], [data-testid="card.wrapper"], [data-testid="tweetPhoto"], [data-testid="videoPlayer"]')) continue;
+      if (!quote.matches('[data-testid="quoteTweet"]') &&
+          (quote.querySelector(postSelector) || [...quote.querySelectorAll(actionSelector)].some(isPostAction))) continue;
+      const hasMedia = [...quote.querySelectorAll(quoteMediaSelector)].some((media) => closestQuote(media) === quote);
+      if (!hasMedia) continue;
+      for (const text of quote.querySelectorAll('[data-testid="tweetText"]')) {
+        if (closestQuote(text) !== quote || text.closest(postSelector) !== post) continue;
+        eligible.add(text);
+        let state = quoteStates.get(text);
+        const content = text.innerHTML;
+        const source = quote.getAttribute('href') || quote.querySelector('a[href*="/status/"]')?.getAttribute('href') || '';
+        if (!state) {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = quoteToggleClass;
+          state = { text, button, content, source, expanded: false, overflow: false, needsMeasure: true };
+          quoteStates.set(text, state);
+          quoteTexts.add(text);
+          button.addEventListener('click', (event) => toggleQuoteText(event, state));
+          for (const type of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend']) {
+            button.addEventListener(type, (event) => event.stopPropagation());
+          }
+          for (const type of ['keydown', 'keyup']) {
+            button.addEventListener(type, (event) => {
+              if (event.key === 'Enter' || event.key === ' ') event.stopPropagation();
+            });
+          }
+          quoteResizeObserver?.observe(text);
+        } else if (state.content !== content || state.source !== source || !text.classList.contains(quoteTextClass)) {
+          state.content = content;
+          state.source = source;
+          state.expanded = false;
+          state.needsMeasure = true;
+        }
+        scheduleQuoteText(text);
+      }
+    }
+    for (const text of post.querySelectorAll(`.${quoteTextClass}`)) {
+      if (text.closest(postSelector) === post && !eligible.has(text)) removeQuoteText(text);
+    }
+  }
+
+  function closestQuote(element) {
+    let quote = element.closest(quoteSelector);
+    // Media/author links inside a quote also have role=link, but no quote text.
+    while (quote && !quote.matches('[data-testid="quoteTweet"]') && !quote.querySelector('[data-testid="tweetText"]')) {
+      quote = quote.parentElement?.closest(quoteSelector);
+    }
+    return quote;
+  }
+
+  function remeasureQuotes() {
+    for (const text of quoteTexts) {
+      if (!text.isConnected) {
+        removeQuoteText(text);
+        continue;
+      }
+      quoteStates.get(text).needsMeasure = true;
+      scheduleQuoteText(text);
+    }
+  }
+
+  window.addEventListener('resize', remeasureQuotes);
+  document.fonts?.ready.then(remeasureQuotes);
+  document.fonts?.addEventListener('loadingdone', remeasureQuotes);
 
   function statusId(path) {
     return path.match(/^\/(?:[^/]+\/status|i\/web\/status)\/(\d+)\/?$/)?.[1] || null;
@@ -274,6 +452,7 @@ ${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass}, 
         for (const node of record.addedNodes) collectAdded(node, actions, posts, tabs);
         for (const node of record.removedNodes) {
           if (node.nodeType !== Node.ELEMENT_NODE) continue;
+          if (!node.isConnected) removeQuotesIn(node);
           knownPosts.delete(node);
           for (const post of node.querySelectorAll(postSelector)) knownPosts.delete(post);
         }
