@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         x-clean-UI
 // @namespace    https://x.com/
-// @version      0.7.1
+// @version      0.7.2
 // @description  Simplify X posts and open the first visible custom Home timeline.
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -31,7 +31,6 @@
   const adClass = 'x-clean-ui-ad';
   const homeTabClass = 'x-clean-ui-home-tab';
   const postControlClass = 'x-clean-ui-post-control';
-  const actionRowClass = 'x-clean-ui-action-row';
   const defaultTabLabels = new Set(['おすすめ', 'フォロー中', 'For you', 'Following']);
   const explainPostLabel = /^(?:このポストを説明する|Explain this post|Grok actions|Grokのアクション)$/i;
   const adLabel = /^(?:Promoted|Sponsored|広告)$/i;
@@ -39,9 +38,7 @@
   const countPattern = /^[\s\d\u0660-\u0669\u06f0-\u06f9\uff10-\uff19]+(?:[.,，٫٬\s]*[\d\u0660-\u0669\u06f0-\u06f9\uff10-\uff19]+)*(?:[KMBTkmbt万千億])?\s*$/;
   const style = document.createElement('style');
   style.textContent = `.${countClass} { visibility: hidden !important; }
-${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass} { display: none !important; }
-.${actionRowClass} { display: block !important; height: 32px !important; min-height: 32px !important; pointer-events: none !important; }
-.${actionRowClass} > * { display: none !important; }`;
+${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass} { display: none !important; }`;
   (document.head || document.documentElement).appendChild(style);
   const pageLocation = window.location;
   const knownPosts = new Set();
@@ -172,16 +169,6 @@ ${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass} {
     for (const [control, target] of controls) {
       control.classList.toggle(postControlClass, !!(target &&
         !control.closest(`[role="group"], ${contentSelector}`)));
-    }
-    const opened = isOpenedPost(post);
-    // Replace the action group's buttons with a blank spacer. Never change
-    // media controls or unrelated role=group UI.
-    for (const group of post.querySelectorAll(`[role="group"], .${actionRowClass}`)) {
-      if (group.closest(postSelector) !== post) continue;
-      const isRow = group.matches('[role="group"]') && !group.closest(contentSelector) &&
-        [...group.querySelectorAll(actionSelector)].some((action) =>
-          action.closest('[role="group"]') === group && isPostAction(action));
-      group.classList.toggle(actionRowClass, !!(isRow && !opened));
     }
     // A timestamp/self-link can arrive after the action buttons render.
     for (const action of post.querySelectorAll(actionSelector)) syncAction(action);
