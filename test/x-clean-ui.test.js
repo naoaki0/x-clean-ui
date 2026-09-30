@@ -131,7 +131,7 @@ test('new posts and changed labels follow scrolling and SPA navigation without a
   assert.equal(fullScans, 0);
 });
 
-test('existing action counts remain hidden and buttons clickable', (t) => {
+test('timeline counts remain hidden and action nodes are retained in the collapsed row', (t) => {
   const window = setup(t, post('normal', '', '2026 and 29'));
   const { document } = window;
   for (const type of ['reply', 'retweet', 'like', 'views']) {
@@ -140,12 +140,29 @@ test('existing action counts remain hidden and buttons clickable', (t) => {
     assert.ok(count, type);
     assert.equal(window.getComputedStyle(count).visibility, 'hidden');
     assert.equal(window.getComputedStyle(button).visibility, 'visible');
+    assert.ok(button.isConnected);
+    assert.equal(window.getComputedStyle(button.closest('[role="group"]')).display, 'none');
   }
-  let clicks = 0;
-  document.getElementById('normal-like').addEventListener('click', () => clicks++);
-  document.getElementById('normal-like').click();
-  assert.equal(clicks, 1);
   assert.equal(document.querySelector('[data-testid="tweetText"]').textContent, '2026 and 29');
+});
+
+test('timeline action rows collapse including share while body, media and unrelated groups remain', (t) => {
+  const window = setup(t, `<nav><div role="group" id="nav-group"><button>共有</button></div></nav>` +
+    post('row', '', '本文', `<div data-testid="videoPlayer"><div role="group" id="video-controls"><button>再生</button></div></div>
+      <div data-testid="quoteTweet"><div role="group" id="quote-controls"><button data-testid="like">引用のボタン</button></div></div>
+      <div role="group" id="unrelated-group"><button>翻訳</button></div>`));
+  const { document } = window;
+  const group = document.getElementById('row-reply').closest('[role="group"]');
+  group.style.cssText = 'height:32px;margin-top:12px';
+  const share = document.createElement('button');
+  share.setAttribute('aria-label', 'ポストを共有');
+  group.append(share);
+  assert.equal(window.getComputedStyle(group).display, 'none', 'display:none removes the entire row from layout');
+  assert.ok(share.isConnected);
+  for (const id of ['nav-group', 'video-controls', 'quote-controls', 'unrelated-group']) {
+    assert.notEqual(window.getComputedStyle(document.getElementById(id)).display, 'none', id);
+  }
+  assert.notEqual(window.getComputedStyle(document.querySelector('[data-testid="tweetText"]')).display, 'none');
 });
 
 test('only the opened post shows reply, like and bookmark counts on desktop and mobile detail routes', (t) => {
@@ -158,6 +175,7 @@ test('only the opened post shows reply, like and bookmark counts on desktop and 
         const visible = id === 'opened' && ['reply', 'like', 'bookmark'].includes(type);
         assert.equal(window.getComputedStyle(action.querySelector('span')).visibility, visible ? 'visible' : 'hidden', `${id}-${type}`);
         assert.equal(window.getComputedStyle(action).visibility, 'visible');
+        assert.equal(window.getComputedStyle(action.closest('[role="group"]')).display === 'none', id !== 'opened', `${id}-${type} row`);
       }
     }
     assert.equal(window.getComputedStyle(document.querySelector('#opened-detail-views span span')).visibility, 'hidden');
@@ -179,12 +197,16 @@ test('detail count exceptions follow SPA entry, another post, Back and delayed t
   document.querySelectorAll = (...args) => { scans++; return originalQuery(...args); };
   const visibility = (id) => window.getComputedStyle(document.querySelector(`#${id}-like span`)).visibility;
   const bookmarkVisibility = (id) => window.getComputedStyle(document.querySelector(`#${id}-bookmark span`)).visibility;
+  const rowHidden = (id) => window.getComputedStyle(document.getElementById(`${id}-like`).closest('[role="group"]')).display === 'none';
   assert.equal(visibility('first'), 'hidden');
+  assert.equal(rowHidden('first'), true);
   assert.equal(bookmarkVisibility('first'), 'hidden');
   window.history.pushState({}, '', '/user/status/123');
   document.body.append(document.createElement('div'));
   await tick(window);
   assert.equal(visibility('first'), 'visible');
+  assert.equal(rowHidden('first'), false);
+  assert.equal(rowHidden('second'), true);
   assert.equal(bookmarkVisibility('first'), 'visible');
   assert.equal(visibility('second'), 'hidden');
   assert.equal(bookmarkVisibility('second'), 'hidden');
@@ -202,11 +224,14 @@ test('detail count exceptions follow SPA entry, another post, Back and delayed t
   assert.equal(visibility('first'), 'hidden');
   assert.equal(bookmarkVisibility('first'), 'hidden');
   assert.equal(visibility('second'), 'visible');
+  assert.equal(rowHidden('first'), true);
+  assert.equal(rowHidden('second'), false);
   assert.equal(bookmarkVisibility('second'), 'visible');
   window.history.replaceState({}, '', '/home');
   window.dispatchEvent(new window.PopStateEvent('popstate'));
   await tick(window);
   assert.equal(visibility('second'), 'hidden');
+  assert.equal(rowHidden('second'), true);
   assert.equal(bookmarkVisibility('second'), 'hidden');
 
   window.history.pushState({}, '', '/user/status/789');
@@ -215,9 +240,18 @@ test('detail count exceptions follow SPA entry, another post, Back and delayed t
   document.body.append(wrapper);
   await tick(window);
   assert.equal(visibility('delayed'), 'hidden');
+  assert.equal(rowHidden('delayed'), true);
   document.getElementById('delayed').insertAdjacentHTML('afterbegin', '<a href="/user/status/789"><time>時刻</time></a>');
   await tick(window);
   assert.equal(visibility('delayed'), 'visible');
+  assert.equal(rowHidden('delayed'), false);
+  const row = document.getElementById('delayed-like').closest('[role="group"]');
+  window.history.replaceState({}, '', '/home');
+  window.dispatchEvent(new window.PopStateEvent('popstate'));
+  await tick(window);
+  row.className = '';
+  await tick(window);
+  assert.equal(rowHidden('delayed'), true, 'React class rewrite');
   assert.equal(scans, 0);
 });
 
