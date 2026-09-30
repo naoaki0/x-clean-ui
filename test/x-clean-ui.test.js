@@ -153,7 +153,7 @@ test('timeline action buttons stay visible and clickable while counts remain hid
   assert.equal(document.querySelector('[data-testid="tweetText"]').textContent, '2026 and 29');
 });
 
-test('timeline rows retain their natural spacing and share button without affecting content', (t) => {
+test('timeline rows retain their natural spacing while only share is hidden', async (t) => {
   const window = setup(t, `<nav><div role="group" id="nav-group"><button>共有</button></div></nav>` +
     post('row', '', '本文', `<div data-testid="videoPlayer"><div role="group" id="video-controls"><button>再生</button></div></div>
       <div data-testid="quoteTweet"><div role="group" id="quote-controls"><button data-testid="like">引用のボタン</button></div></div>
@@ -164,16 +164,65 @@ test('timeline rows retain their natural spacing and share button without affect
   const share = document.createElement('button');
   share.setAttribute('aria-label', 'ポストを共有');
   group.append(share);
+  await tick(window);
   assert.notEqual(window.getComputedStyle(group).display, 'none');
   assert.equal(window.getComputedStyle(group).height, '40px');
   assert.equal(window.getComputedStyle(group).marginTop, '12px');
   assert.notEqual(window.getComputedStyle(group).pointerEvents, 'none');
-  assert.notEqual(window.getComputedStyle(share).display, 'none');
+  assert.equal(window.getComputedStyle(share).display, 'none');
   assert.ok(share.isConnected);
   for (const id of ['nav-group', 'video-controls', 'quote-controls', 'unrelated-group']) {
     assert.notEqual(window.getComputedStyle(document.getElementById(id)).display, 'none', id);
   }
   assert.notEqual(window.getComputedStyle(document.querySelector('[data-testid="tweetText"]')).display, 'none');
+});
+
+test('share is visible only for the opened post and stays scoped through SPA and React updates', async (t) => {
+  const window = setup(t, statusPost('first', '123') + statusPost('second', '456') +
+    '<nav><button aria-label="ポストを共有" id="nav-share"></button></nav>');
+  const { document } = window;
+  for (const [id, label] of [['first', 'ポストを共有'], ['second', 'Share post']]) {
+    const group = document.getElementById(`${id}-like`).closest('[role="group"]');
+    group.insertAdjacentHTML('beforeend', `<button aria-label="${label}" id="${id}-share"><svg></svg></button>`);
+  }
+  document.getElementById('first').insertAdjacentHTML('afterbegin', '<button aria-label="Share" id="header-share"></button>');
+  document.getElementById('first').insertAdjacentHTML('beforeend', '<div data-testid="videoPlayer"><div role="group"><button aria-label="ポストを共有" id="video-share"></button></div></div>');
+  await tick(window);
+  const hidden = (id) => window.getComputedStyle(document.getElementById(id)).display === 'none';
+  assert.equal(hidden('first-share'), true);
+  assert.equal(hidden('second-share'), true);
+  for (const id of ['nav-share', 'header-share', 'video-share', 'first-like', 'first-reply', 'first-bookmark']) {
+    assert.equal(hidden(id), false, id);
+  }
+  const originalQuery = document.querySelectorAll.bind(document);
+  let scans = 0;
+  document.querySelectorAll = (...args) => { scans++; return originalQuery(...args); };
+  window.history.pushState({}, '', '/user/status/123');
+  document.body.append(document.createElement('div'));
+  await tick(window);
+  assert.equal(hidden('first-share'), false);
+  assert.equal(hidden('second-share'), true);
+  const share = document.getElementById('first-share');
+  let clicks = 0;
+  share.addEventListener('click', () => clicks++);
+  share.click();
+  assert.equal(clicks, 1);
+  window.history.pushState({}, '', '/user/status/456');
+  document.body.append(document.createElement('div'));
+  await tick(window);
+  assert.equal(hidden('first-share'), true);
+  assert.equal(hidden('second-share'), false);
+  share.className = '';
+  await tick(window);
+  assert.equal(hidden('first-share'), true);
+  share.setAttribute('aria-label', 'Share profile');
+  await tick(window);
+  assert.equal(hidden('first-share'), false, 'a reused non-post-share control is restored');
+  window.history.replaceState({}, '', '/home');
+  window.dispatchEvent(new window.PopStateEvent('popstate'));
+  await tick(window);
+  assert.equal(hidden('second-share'), true);
+  assert.equal(scans, 0);
 });
 
 test('only the opened post shows reply, like and bookmark counts on desktop and mobile detail routes', (t) => {

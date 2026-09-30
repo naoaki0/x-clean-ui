@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         x-clean-UI
 // @namespace    https://x.com/
-// @version      0.7.2
+// @version      0.7.3
 // @description  Simplify X posts and open the first visible custom Home timeline.
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -31,14 +31,16 @@
   const adClass = 'x-clean-ui-ad';
   const homeTabClass = 'x-clean-ui-home-tab';
   const postControlClass = 'x-clean-ui-post-control';
+  const shareClass = 'x-clean-ui-share';
   const defaultTabLabels = new Set(['おすすめ', 'フォロー中', 'For you', 'Following']);
   const explainPostLabel = /^(?:このポストを説明する|Explain this post|Grok actions|Grokのアクション)$/i;
+  const sharePostLabel = /^(?:ポストを共有|共有|Share post|Share)$/i;
   const adLabel = /^(?:Promoted|Sponsored|広告)$/i;
   const contentSelector = '[data-testid="tweetText"], [data-testid="quoteTweet"], [data-testid="card.wrapper"], [data-testid="media-container"], [data-testid="tweetPhoto"], [data-testid="videoPlayer"]';
   const countPattern = /^[\s\d\u0660-\u0669\u06f0-\u06f9\uff10-\uff19]+(?:[.,，٫٬\s]*[\d\u0660-\u0669\u06f0-\u06f9\uff10-\uff19]+)*(?:[KMBTkmbt万千億])?\s*$/;
   const style = document.createElement('style');
   style.textContent = `.${countClass} { visibility: hidden !important; }
-${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass} { display: none !important; }`;
+${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass}, .${shareClass} { display: none !important; }`;
   (document.head || document.documentElement).appendChild(style);
   const pageLocation = window.location;
   const knownPosts = new Set();
@@ -169,6 +171,14 @@ ${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass} {
     for (const [control, target] of controls) {
       control.classList.toggle(postControlClass, !!(target &&
         !control.closest(`[role="group"], ${contentSelector}`)));
+    }
+    const opened = isOpenedPost(post);
+    for (const control of post.querySelectorAll(`button, [role="button"], .${shareClass}`)) {
+      if (control.closest(postSelector) !== post) continue;
+      const label = control.getAttribute('aria-label') || control.getAttribute('title') || '';
+      const isShare = control.matches('button, [role="button"]') &&
+        sharePostLabel.test(label.trim()) && isPostAction(control);
+      control.classList.toggle(shareClass, !!(isShare && !opened));
     }
     // A timestamp/self-link can arrive after the action buttons render.
     for (const action of post.querySelectorAll(actionSelector)) syncAction(action);
