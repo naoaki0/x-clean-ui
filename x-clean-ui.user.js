@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         x-clean-UI
 // @namespace    https://x.com/
-// @version      0.6.0
+// @version      0.6.1
 // @description  Simplify X posts and open the first visible custom Home timeline.
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -207,8 +207,8 @@ ${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass} {
     if (!action.isConnected || !isPostAction(action)) return;
     const opened = isOpenedPost(action.closest(postSelector));
     const bookmark = action.matches('[data-testid="bookmark"], [data-testid="removeBookmark"]');
-    const show = opened && action.matches('[data-testid="reply"], [data-testid="like"], [data-testid="unlike"]');
-    const hide = !show && (!bookmark || opened);
+    const show = opened && (bookmark || action.matches('[data-testid="reply"], [data-testid="like"], [data-testid="unlike"]'));
+    const hide = !show;
 
     // X normally gives the animated count a dedicated container. Only use it
     // when its contents are a count; never hide the whole action or its icon.

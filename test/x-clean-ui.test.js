@@ -148,20 +148,20 @@ test('existing action counts remain hidden and buttons clickable', (t) => {
   assert.equal(document.querySelector('[data-testid="tweetText"]').textContent, '2026 and 29');
 });
 
-test('only the opened post shows reply and like counts on desktop and mobile detail routes', (t) => {
+test('only the opened post shows reply, like and bookmark counts on desktop and mobile detail routes', (t) => {
   for (const url of ['https://x.com/user/status/123', 'https://twitter.com/i/web/status/123']) {
     const window = setup(t, statusPost('parent', '111') + statusPost('opened', '123') + statusPost('reply-post', '456'), url);
     const { document } = window;
     for (const id of ['parent', 'opened', 'reply-post']) {
-      for (const type of ['reply', 'like', 'retweet', 'views']) {
+      for (const type of ['reply', 'like', 'bookmark', 'retweet', 'views']) {
         const action = document.getElementById(`${id}-${type}`);
-        const visible = id === 'opened' && ['reply', 'like'].includes(type);
+        const visible = id === 'opened' && ['reply', 'like', 'bookmark'].includes(type);
         assert.equal(window.getComputedStyle(action.querySelector('span')).visibility, visible ? 'visible' : 'hidden', `${id}-${type}`);
         assert.equal(window.getComputedStyle(action).visibility, 'visible');
       }
     }
     assert.equal(window.getComputedStyle(document.querySelector('#opened-detail-views span span')).visibility, 'hidden');
-    assert.equal(window.getComputedStyle(document.querySelector('#opened-bookmark span')).visibility, 'hidden');
+    assert.equal(window.getComputedStyle(document.querySelector('#opened-bookmark span')).visibility, 'visible');
     assert.equal(window.getComputedStyle(document.querySelector('#opened-body-link span')).visibility, 'visible');
     const like = document.getElementById('opened-like');
     let clicks = 0;
@@ -178,27 +178,36 @@ test('detail count exceptions follow SPA entry, another post, Back and delayed t
   let scans = 0;
   document.querySelectorAll = (...args) => { scans++; return originalQuery(...args); };
   const visibility = (id) => window.getComputedStyle(document.querySelector(`#${id}-like span`)).visibility;
+  const bookmarkVisibility = (id) => window.getComputedStyle(document.querySelector(`#${id}-bookmark span`)).visibility;
   assert.equal(visibility('first'), 'hidden');
+  assert.equal(bookmarkVisibility('first'), 'hidden');
   window.history.pushState({}, '', '/user/status/123');
   document.body.append(document.createElement('div'));
   await tick(window);
   assert.equal(visibility('first'), 'visible');
+  assert.equal(bookmarkVisibility('first'), 'visible');
   assert.equal(visibility('second'), 'hidden');
+  assert.equal(bookmarkVisibility('second'), 'hidden');
+  document.getElementById('first-bookmark').setAttribute('data-testid', 'removeBookmark');
   const firstLike = document.getElementById('first-like');
   firstLike.setAttribute('data-testid', 'unlike');
   firstLike.querySelector('span').textContent = '710';
   await tick(window);
   assert.equal(visibility('first'), 'visible');
+  assert.equal(bookmarkVisibility('first'), 'visible');
 
   window.history.pushState({}, '', '/user/status/456');
   document.body.append(document.createElement('div'));
   await tick(window);
   assert.equal(visibility('first'), 'hidden');
+  assert.equal(bookmarkVisibility('first'), 'hidden');
   assert.equal(visibility('second'), 'visible');
+  assert.equal(bookmarkVisibility('second'), 'visible');
   window.history.replaceState({}, '', '/home');
   window.dispatchEvent(new window.PopStateEvent('popstate'));
   await tick(window);
   assert.equal(visibility('second'), 'hidden');
+  assert.equal(bookmarkVisibility('second'), 'hidden');
 
   window.history.pushState({}, '', '/user/status/789');
   const wrapper = document.createElement('div');
