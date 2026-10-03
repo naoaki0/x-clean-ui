@@ -81,20 +81,20 @@ function trackSelections(window) {
   return { tabs, clicks };
 }
 
-test('desktop text width is limited to 24 ideographic characters without targeting touch screens, media or controls', (t) => {
+test('desktop text width is limited to 26 ideographic characters without targeting touch screens, media or controls', (t) => {
   const window = setup(t, post('desktop-width', '', '長い本文', quote('width-quote', 6)));
   const { document } = window;
   const mediaRule = [...document.styleSheets[0].cssRules].find((rule) => rule.conditionText === '(hover: hover) and (pointer: fine)');
   assert.equal(mediaRule.cssRules.length, 1);
   const rule = mediaRule.cssRules[0];
   assert.equal(rule.selectorText, 'article[data-testid="tweet"] [data-testid="tweetText"]');
-  assert.equal(rule.style.getPropertyValue('max-width'), '24ic');
+  assert.equal(rule.style.getPropertyValue('max-width'), '26ic');
   assert.equal(rule.style.getPropertyPriority('max-width'), 'important');
   assert.equal(rule.style.getPropertyValue('overflow-wrap'), 'anywhere');
   const targets = [...document.querySelectorAll(rule.selectorText)];
   assert.equal(targets.length, 2, 'only main and quoted text are targeted');
   assert.ok(targets.every((element) => element.dataset.testid === 'tweetText'));
-  assert.match(script, /max-width: 24em !important; max-width: 24ic !important;/, 'older browsers retain the em fallback');
+  assert.match(script, /max-width: 26em !important; max-width: 26ic !important;/, 'older browsers retain the em fallback');
 });
 
 test('only media quote text over three rendered lines is clamped; main text, short quotes and media stay intact', async (t) => {
