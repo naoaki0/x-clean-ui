@@ -151,6 +151,59 @@ test('quote toggle expands inline without parent navigation, while quote and med
   assert.equal(text.classList.contains('x-clean-ui-quote-clamped'), true);
 });
 
+test('quote toggles match the native Show more presentation, hover only the label, and follow late controls and theme changes', async (t) => {
+  const window = setup(t, post('appearance', '', '通常の本文', quote('styled-quote', 6)), 'https://x.com/home', quoteLayout);
+  const { document } = window;
+  await quoteTick(window);
+  const button = document.querySelector('#styled-quote .x-clean-ui-quote-toggle');
+  const rules = [...document.styleSheets[0].cssRules];
+  const baseRule = rules.find((rule) => rule.selectorText === '.x-clean-ui-quote-toggle');
+  const hoverRule = rules.find((rule) => rule.selectorText === '.x-clean-ui-quote-toggle:hover');
+  assert.equal(baseRule.style.getPropertyValue('text-decoration'), 'none');
+  assert.equal(baseRule.style.getPropertyValue('width'), 'fit-content', 'hover target is the label, not the whole row');
+  assert.equal(baseRule.style.getPropertyValue('margin'), '0');
+  assert.equal(hoverRule.style.getPropertyValue('text-decoration'), 'underline');
+  assert.ok(baseRule.style.getPropertyValue('color').includes('#1d9bf0'), 'X blue is the fallback without a native control');
+
+  const originalQuery = document.querySelectorAll.bind(document);
+  let scans = 0;
+  document.querySelectorAll = (...args) => { scans++; return originalQuery(...args); };
+  const native = document.createElement('button');
+  native.dataset.testid = 'tweet-text-show-more-link';
+  native.textContent = 'さらに表示';
+  native.style.cssText = 'font-family: Arial; font-size: 17px; font-weight: 400; font-style: normal; line-height: 24px; letter-spacing: 0.2px;';
+  const nativeStyle = document.createElement('style');
+  nativeStyle.textContent = '[data-testid="tweet-text-show-more-link"] { color: rgb(29, 155, 240); }';
+  document.head.append(nativeStyle);
+  const originalHTML = native.outerHTML;
+  let nativeClicks = 0;
+  native.addEventListener('click', () => nativeClicks++);
+  document.getElementById('appearance').append(native);
+  await quoteTick(window);
+  for (const property of ['color', 'font-family', 'font-size', 'font-weight', 'font-style', 'line-height', 'letter-spacing']) {
+    assert.equal(document.documentElement.style.getPropertyValue(`--x-clean-ui-quote-toggle-${property}`),
+      window.getComputedStyle(native).getPropertyValue(property), property);
+  }
+  assert.equal(native.outerHTML, originalHTML, 'the official control is untouched');
+  native.click();
+  assert.equal(nativeClicks, 1);
+  button.click();
+  await quoteTick(window);
+  assert.equal(button.textContent, '折りたたむ');
+  assert.equal(nativeClicks, 1, 'custom expansion never invokes the official handler');
+
+  const theme = document.createElement('style');
+  theme.textContent = '.custom-accent [data-testid="tweet-text-show-more-link"] { color: rgb(255, 122, 0) !important; }';
+  document.head.append(theme);
+  document.documentElement.classList.add('custom-accent');
+  await quoteTick(window);
+  assert.equal(document.documentElement.style.getPropertyValue('--x-clean-ui-quote-toggle-color'), 'rgb(255, 122, 0)');
+  button.click();
+  await quoteTick(window);
+  assert.equal(button.textContent, 'さらに表示');
+  assert.equal(scans, 0);
+});
+
 test('dynamic quote updates are idempotent, reset reused text, respond to width changes and remove stale controls', async (t) => {
   const window = setup(t, post('initial', '', '本文'), 'https://x.com/home', quoteLayout);
   const { document } = window;

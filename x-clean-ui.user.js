@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         x-clean-UI
 // @namespace    https://x.com/
-// @version      0.8.1
+// @version      0.8.2
 // @description  Simplify X posts and open the first visible custom Home timeline.
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -38,6 +38,7 @@
   const quoteClampClass = 'x-clean-ui-quote-clamped';
   const quoteExpandedClass = 'x-clean-ui-quote-expanded';
   const quoteToggleClass = 'x-clean-ui-quote-toggle';
+  const nativeMoreSelector = '[data-testid="tweet-text-show-more-link"]';
   const defaultTabLabels = new Set(['おすすめ', 'フォロー中', 'For you', 'Following']);
   const explainPostLabel = /^(?:このポストを説明する|Explain this post|Grok actions|Grokのアクション)$/i;
   const sharePostLabel = /^(?:ポストを共有|共有|Share post|Share)$/i;
@@ -49,7 +50,9 @@
 ${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass}, .${shareClass} { display: none !important; }
 .${quoteClampClass} { display: -webkit-box !important; -webkit-box-orient: vertical !important; -webkit-line-clamp: 3 !important; line-clamp: 3; overflow: hidden !important; }
 .${quoteExpandedClass} { display: block !important; -webkit-line-clamp: unset !important; line-clamp: unset; max-height: none !important; overflow: visible !important; }
-.${quoteToggleClass} { appearance: none; border: 0; background: none; color: #1d9bf0; font: inherit; padding: 0; margin-top: 2px; display: block; text-align: start; cursor: pointer; }`;
+.${quoteToggleClass} { appearance: none; border: 0; border-radius: 0; background: none; color: var(--x-clean-ui-quote-toggle-color, #1d9bf0); font: inherit; font-family: var(--x-clean-ui-quote-toggle-font-family, inherit); font-size: var(--x-clean-ui-quote-toggle-font-size, inherit); font-weight: var(--x-clean-ui-quote-toggle-font-weight, inherit); font-style: var(--x-clean-ui-quote-toggle-font-style, inherit); line-height: var(--x-clean-ui-quote-toggle-line-height, inherit); letter-spacing: var(--x-clean-ui-quote-toggle-letter-spacing, inherit); padding: 0; margin: 0; display: block; width: fit-content; align-self: flex-start; text-align: start; text-decoration: none; cursor: pointer; }
+.${quoteToggleClass}:hover { text-decoration: underline; }
+.${quoteToggleClass}:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }`;
   (document.head || document.documentElement).appendChild(style);
   const pageLocation = window.location;
   const knownPosts = new Set();
@@ -58,6 +61,8 @@ ${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass}, 
   const pendingQuoteTexts = new Set();
   const nextFrame = window.requestAnimationFrame ? window.requestAnimationFrame.bind(window) : (callback) => window.setTimeout(callback, 0);
   let quoteFrame = null;
+  let quoteAppearanceFrame = null;
+  let nativeMoreControl = null;
   const quoteResizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver((entries) => {
     for (const { target } of entries) {
       const state = quoteStates.get(target);
@@ -222,6 +227,31 @@ ${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass}, 
     });
   }
 
+  function collectNativeMore(root) {
+    if (root.nodeType !== Node.ELEMENT_NODE) return;
+    const control = root.matches(nativeMoreSelector) ? root : root.querySelector(nativeMoreSelector);
+    if (control?.isConnected) nativeMoreControl = control;
+  }
+
+  function scheduleQuoteAppearance() {
+    if (!nativeMoreControl?.isConnected || quoteAppearanceFrame !== null) return;
+    quoteAppearanceFrame = nextFrame(() => {
+      quoteAppearanceFrame = null;
+      if (!nativeMoreControl?.isConnected) return;
+      const nativeStyle = window.getComputedStyle(nativeMoreControl);
+      if (nativeStyle.display === 'none' || nativeStyle.visibility === 'hidden') return;
+      // Use X's live "Show more" color and typography, including custom themes.
+      // Only copy presentation; never clone its navigation or event handlers.
+      for (const property of ['color', 'font-family', 'font-size', 'font-weight', 'font-style', 'line-height', 'letter-spacing']) {
+        const value = nativeStyle.getPropertyValue(property);
+        const name = `--x-clean-ui-quote-toggle-${property}`;
+        if (value && document.documentElement.style.getPropertyValue(name) !== value) {
+          document.documentElement.style.setProperty(name, value);
+        }
+      }
+    });
+  }
+
   function removeQuoteText(text) {
     const state = quoteStates.get(text);
     if (!state) return;
@@ -348,6 +378,7 @@ ${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass}, 
   }
 
   function remeasureQuotes() {
+    scheduleQuoteAppearance();
     for (const text of quoteTexts) {
       if (!text.isConnected) {
         removeQuoteText(text);
@@ -432,12 +463,15 @@ ${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass}, 
     collectClosest(node, actions, posts, tabs);
     if (node.nodeType !== Node.ELEMENT_NODE) return;
     const element = node;
+    collectNativeMore(element);
     for (const descendant of element.querySelectorAll(actionSelector)) actions.add(descendant);
     for (const descendant of element.querySelectorAll(postSelector)) posts.add(descendant);
     for (const descendant of element.querySelectorAll(homeTabSelector)) tabs.add(descendant);
   }
 
   // One initial scan; all subsequent scans are restricted to changed subtrees.
+  collectNativeMore(document.documentElement);
+  scheduleQuoteAppearance();
   for (const tab of document.querySelectorAll(homeTabSelector)) syncHomeTab(tab);
   if (homeTabList) scheduleHomeCheck();
   for (const post of document.querySelectorAll(postSelector)) syncPost(post);
@@ -478,6 +512,7 @@ ${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass}, 
     if (tabs.size || pathChanged) scheduleHomeCheck();
     for (const post of posts) syncPost(post);
     for (const action of actions) syncAction(action);
+    scheduleQuoteAppearance();
   });
 
   observer.observe(document.documentElement, {
