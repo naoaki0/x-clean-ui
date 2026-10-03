@@ -45,12 +45,12 @@ const quote = (id, lines, media = 'photo', attributes = 'data-testid="quoteTweet
     media === 'video' ? `<div data-testid="videoPlayer"><video id="${id}-media" controls width="300" height="200"></video></div>` : ''}
 </div>`;
 
-function quoteLayout(window) {
-  // JSDOM does not lay out text. Mock browser geometry here; real layout is
-  // verified separately in Chromium, including wrapping and exact three lines.
+function quoteLayout(window, maxLines = () => 3) {
+  // JSDOM does not lay out text or evaluate media queries. Mock geometry here;
+  // final appearance is checked in X on the actual device.
   Object.defineProperty(window.HTMLElement.prototype, 'clientHeight', { configurable: true, get() {
     const lines = Number(this.dataset.testLines || 0);
-    return (this.classList.contains('x-clean-ui-quote-clamped') ? Math.min(lines, 3) : lines) * 20;
+    return (this.classList.contains('x-clean-ui-quote-clamped') ? Math.min(lines, maxLines()) : lines) * 20;
   } });
   Object.defineProperty(window.HTMLElement.prototype, 'scrollHeight', { configurable: true, get() {
     return Number(this.dataset.testLines || 0) * 20;
@@ -109,6 +109,47 @@ test('only media quote text over three rendered lines is clamped; main text, sho
   await quoteTick(window);
   observer.disconnect();
   assert.equal(idleMutations, 0, 'quote processing must settle, not generate an idle mutation loop');
+});
+
+test('small touch screens show four quote lines, expand the rest, and keep narrow desktop windows at three', async (t) => {
+  let coarsePointer = true;
+  const window = setup(t, post('mobile-quotes', '', '通常本文',
+    quote('mobile-short', 3) + quote('mobile-exact', 4) + quote('mobile-long', 5, 'video') + quote('mobile-text-only', 8, '')),
+  'https://x.com/home', (window) => {
+    window.innerWidth = 390;
+    quoteLayout(window, () => window.innerWidth <= 767 && coarsePointer ? 4 : 3);
+  });
+  const { document } = window;
+  const mediaRule = [...document.styleSheets[0].cssRules].find((rule) => rule.conditionText === '(max-width: 767px) and (pointer: coarse)');
+  const clampRule = [...mediaRule.cssRules].find((rule) => rule.selectorText === '.x-clean-ui-quote-clamped');
+  for (const property of ['-webkit-line-clamp', 'line-clamp']) {
+    assert.equal(clampRule.style.getPropertyValue(property), '4');
+    if (property === '-webkit-line-clamp') assert.equal(clampRule.style.getPropertyPriority(property), 'important');
+  }
+  await quoteTick(window);
+  for (const id of ['mobile-short', 'mobile-exact', 'mobile-text-only']) {
+    assert.equal(document.getElementById(id).querySelector('.x-clean-ui-quote-toggle'), null);
+  }
+  const text = document.getElementById('mobile-long-text');
+  const button = document.querySelector('#mobile-long .x-clean-ui-quote-toggle');
+  assert.equal(text.clientHeight, 80);
+  assert.equal(button.textContent, 'さらに表示');
+  button.click();
+  await quoteTick(window);
+  assert.equal(text.clientHeight, 100);
+  assert.equal(button.getAttribute('aria-expanded'), 'true');
+  button.click();
+  await quoteTick(window);
+  assert.equal(text.clientHeight, 80);
+  assert.equal(button.getAttribute('aria-expanded'), 'false');
+  for (const [width, coarse, lines] of [[767, true, 4], [768, true, 3], [390, false, 3], [390, true, 4]]) {
+    window.innerWidth = width;
+    coarsePointer = coarse;
+    window.dispatchEvent(new window.Event('resize'));
+    await quoteTick(window);
+    assert.equal(text.clientHeight, lines * 20);
+    assert.equal(Boolean(document.querySelector('#mobile-exact .x-clean-ui-quote-toggle')), lines === 3);
+  }
 });
 
 test('quote toggle expands inline without parent navigation, while quote and media clicks retain native handlers', async (t) => {
