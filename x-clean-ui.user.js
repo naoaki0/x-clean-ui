@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         x-clean-UI
 // @namespace    https://x.com/
-// @version      0.8.8
+// @version      0.8.9
 // @description  Simplify X posts and open the first visible custom Home timeline.
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -48,7 +48,6 @@
   const style = document.createElement('style');
   style.textContent = `.${countClass} { visibility: hidden !important; }
 ${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass}, .${shareClass} { display: none !important; }
-@media (hover: hover) and (pointer: fine) { ${postSelector} [data-testid="tweetText"] { max-width: 30em !important; max-width: 30ic !important; overflow-wrap: anywhere !important; } }
 .${quoteClampClass} { display: -webkit-box !important; -webkit-box-orient: vertical !important; -webkit-line-clamp: 3 !important; line-clamp: 3; overflow: hidden !important; }
 @media (max-width: 767px) and (pointer: coarse) { .${quoteClampClass} { -webkit-line-clamp: 4 !important; line-clamp: 4; } }
 .${quoteExpandedClass} { display: block !important; -webkit-line-clamp: unset !important; line-clamp: unset; max-height: none !important; overflow: visible !important; }
