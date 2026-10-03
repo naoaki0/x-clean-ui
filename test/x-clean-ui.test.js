@@ -437,14 +437,14 @@ test('share is visible only for the opened post and stays scoped through SPA and
   assert.equal(scans, 0);
 });
 
-test('only the opened post shows reply, like and bookmark counts on desktop and mobile detail routes', (t) => {
+test('only the opened post shows like and bookmark counts; reply counts stay hidden on desktop and mobile detail routes', (t) => {
   for (const url of ['https://x.com/user/status/123', 'https://twitter.com/i/web/status/123']) {
     const window = setup(t, statusPost('parent', '111') + statusPost('opened', '123') + statusPost('reply-post', '456'), url);
     const { document } = window;
     for (const id of ['parent', 'opened', 'reply-post']) {
       for (const type of ['reply', 'like', 'bookmark', 'retweet', 'views']) {
         const action = document.getElementById(`${id}-${type}`);
-        const visible = id === 'opened' && ['reply', 'like', 'bookmark'].includes(type);
+        const visible = id === 'opened' && ['like', 'bookmark'].includes(type);
         assert.equal(window.getComputedStyle(action.querySelector('span')).visibility, visible ? 'visible' : 'hidden', `${id}-${type}`);
         assert.equal(window.getComputedStyle(action).visibility, 'visible');
         assert.notEqual(window.getComputedStyle(action).display, 'none', `${id}-${type} button`);
@@ -456,11 +456,13 @@ test('only the opened post shows reply, like and bookmark counts on desktop and 
     assert.equal(window.getComputedStyle(document.querySelector('#opened-detail-views span span')).visibility, 'hidden');
     assert.equal(window.getComputedStyle(document.querySelector('#opened-bookmark span')).visibility, 'visible');
     assert.equal(window.getComputedStyle(document.querySelector('#opened-body-link span')).visibility, 'visible');
-    const like = document.getElementById('opened-like');
-    let clicks = 0;
-    like.addEventListener('click', () => clicks++);
-    like.click();
-    assert.equal(clicks, 1);
+    for (const type of ['like', 'reply']) {
+      const action = document.getElementById(`opened-${type}`);
+      let clicks = 0;
+      action.addEventListener('click', () => clicks++);
+      action.click();
+      assert.equal(clicks, 1);
+    }
   }
 });
 
@@ -472,6 +474,7 @@ test('detail count exceptions follow SPA entry, another post, Back and delayed t
   document.querySelectorAll = (...args) => { scans++; return originalQuery(...args); };
   const visibility = (id) => window.getComputedStyle(document.querySelector(`#${id}-like span`)).visibility;
   const bookmarkVisibility = (id) => window.getComputedStyle(document.querySelector(`#${id}-bookmark span`)).visibility;
+  const replyVisibility = (id) => window.getComputedStyle(document.querySelector(`#${id}-reply span`)).visibility;
   const rowHidden = (id) => window.getComputedStyle(document.getElementById(`${id}-like`)).display === 'none';
   assert.equal(visibility('first'), 'hidden');
   assert.equal(rowHidden('first'), false);
@@ -483,15 +486,18 @@ test('detail count exceptions follow SPA entry, another post, Back and delayed t
   assert.equal(rowHidden('first'), false);
   assert.equal(rowHidden('second'), false);
   assert.equal(bookmarkVisibility('first'), 'visible');
+  assert.equal(replyVisibility('first'), 'hidden');
   assert.equal(visibility('second'), 'hidden');
   assert.equal(bookmarkVisibility('second'), 'hidden');
   document.getElementById('first-bookmark').setAttribute('data-testid', 'removeBookmark');
   const firstLike = document.getElementById('first-like');
   firstLike.setAttribute('data-testid', 'unlike');
   firstLike.querySelector('span').textContent = '710';
+  document.querySelector('#first-reply span').textContent = '30';
   await tick(window);
   assert.equal(visibility('first'), 'visible');
   assert.equal(bookmarkVisibility('first'), 'visible');
+  assert.equal(replyVisibility('first'), 'hidden');
 
   window.history.pushState({}, '', '/user/status/456');
   document.body.append(document.createElement('div'));
@@ -502,6 +508,7 @@ test('detail count exceptions follow SPA entry, another post, Back and delayed t
   assert.equal(rowHidden('first'), false);
   assert.equal(rowHidden('second'), false);
   assert.equal(bookmarkVisibility('second'), 'visible');
+  assert.equal(replyVisibility('second'), 'hidden');
   window.history.replaceState({}, '', '/home');
   window.dispatchEvent(new window.PopStateEvent('popstate'));
   await tick(window);
