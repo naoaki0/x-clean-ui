@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         x-clean-UI
 // @namespace    https://x.com/
-// @version      0.8.9
+// @version      0.8.10
 // @description  Simplify X posts and open the first visible custom Home timeline.
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -76,6 +76,7 @@ ${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass}, 
   let homeTabList = null;
   let lastPath = pageLocation.pathname;
   let pendingTab = null;
+  let keepRecommendedTimeline = false;
   let homeCheckTimer = null;
 
   function isHome() {
@@ -102,8 +103,13 @@ ${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass}, 
       (labels.has('For you') && labels.has('Following'));
   }
 
+  function isHiddenHomeTab(tab) {
+    const label = tab.textContent.replace(/\s+/g, ' ').trim() || (tab.getAttribute('aria-label') || '').trim();
+    return isDefaultTab(tab) && /^(?:フォロー中|Following)$/.test(label);
+  }
+
   function openFirstCustomTimeline() {
-    if (!isHome() || !homeTabList?.isConnected) return;
+    if (!isHome() || !homeTabList?.isConnected || keepRecommendedTimeline) return;
     const tabs = [...homeTabList.querySelectorAll('[role="tab"]')]
       .filter((tab) => tab.closest('[role="tablist"]') === homeTabList);
     const selected = tabs.find((tab) => tab.getAttribute('aria-selected') === 'true');
@@ -140,11 +146,11 @@ ${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass}, 
       // processed. Recheck only this tablist when it becomes identifiable.
       for (const sibling of list.querySelectorAll('[role="tab"]')) {
         if (sibling.closest('[role="tablist"]') === list) {
-          sibling.classList.toggle(homeTabClass, isDefaultTab(sibling));
+          sibling.classList.toggle(homeTabClass, isHiddenHomeTab(sibling));
         }
       }
     }
-    tab.classList.toggle(homeTabClass, !!(isTimeline && isDefaultTab(tab)));
+    tab.classList.toggle(homeTabClass, !!(isTimeline && isHiddenHomeTab(tab)));
   }
 
   function isAdLabel(element, post) {
@@ -470,6 +476,14 @@ ${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass}, 
     for (const descendant of element.querySelectorAll(homeTabSelector)) tabs.add(descendant);
   }
 
+  // Remember a deliberate recommendation selection before X updates aria-selected.
+  document.addEventListener('click', (event) => {
+    if (!isHome() || !(event.target instanceof Element)) return;
+    const tab = event.target.closest(homeTabSelector);
+    if (!tab || !isHomeTimelineList(tab.closest('[role="tablist"]'))) return;
+    keepRecommendedTimeline = isDefaultTab(tab) && !isHiddenHomeTab(tab);
+  }, true);
+
   // One initial scan; all subsequent scans are restricted to changed subtrees.
   collectNativeMore(document.documentElement);
   scheduleQuoteAppearance();
@@ -503,6 +517,7 @@ ${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass}, 
     if (pathChanged) {
       lastPath = pageLocation.pathname;
       pendingTab = null;
+      keepRecommendedTimeline = false;
       // Route changes are rare; recheck tracked posts, not the whole document.
       for (const post of knownPosts) posts.add(post);
       if (homeTabList && homeTabList.isConnected) {
@@ -527,6 +542,7 @@ ${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass}, 
   window.addEventListener('popstate', () => {
     if (pageLocation.pathname !== lastPath) {
       pendingTab = null;
+      keepRecommendedTimeline = false;
       for (const post of knownPosts) syncPost(post);
     }
     if (homeTabList && homeTabList.isConnected) {
