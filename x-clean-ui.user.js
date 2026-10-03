@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         x-clean-UI
 // @namespace    https://x.com/
-// @version      0.8.3
+// @version      0.8.4
 // @description  Simplify X posts and open the first visible custom Home timeline.
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -50,8 +50,8 @@
 ${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass}, .${shareClass} { display: none !important; }
 .${quoteClampClass} { display: -webkit-box !important; -webkit-box-orient: vertical !important; -webkit-line-clamp: 3 !important; line-clamp: 3; overflow: hidden !important; }
 .${quoteExpandedClass} { display: block !important; -webkit-line-clamp: unset !important; line-clamp: unset; max-height: none !important; overflow: visible !important; }
-.${quoteToggleClass} { appearance: none; border: 0; border-radius: 0; background: none; color: var(--x-clean-ui-quote-toggle-color, #1d9bf0); font: inherit; font-family: var(--x-clean-ui-quote-toggle-font-family, inherit); font-size: var(--x-clean-ui-quote-toggle-font-size, inherit); font-weight: var(--x-clean-ui-quote-toggle-font-weight, inherit); font-style: var(--x-clean-ui-quote-toggle-font-style, inherit); line-height: var(--x-clean-ui-quote-toggle-line-height, inherit); letter-spacing: var(--x-clean-ui-quote-toggle-letter-spacing, inherit); padding: 0; margin: 0; display: block; width: fit-content; align-self: flex-start; text-align: start; text-decoration: none; cursor: pointer; }
-.${quoteToggleClass}:hover { text-decoration: underline; }
+.${quoteToggleClass} { appearance: none; border: 0; border-radius: 0; background: none; color: inherit; opacity: 0.55; font: inherit; font-family: var(--x-clean-ui-quote-toggle-font-family, inherit); font-size: calc(var(--x-clean-ui-quote-toggle-font-size, 1em) * 0.85); font-weight: var(--x-clean-ui-quote-toggle-font-weight, inherit); font-style: var(--x-clean-ui-quote-toggle-font-style, inherit); line-height: var(--x-clean-ui-quote-toggle-line-height, inherit); letter-spacing: var(--x-clean-ui-quote-toggle-letter-spacing, inherit); padding: 0; margin: 0; display: block; width: fit-content; align-self: flex-start; text-align: start; text-decoration: none; cursor: pointer; }
+.${quoteToggleClass}:hover, .${quoteToggleClass}:focus-visible, .${quoteToggleClass}:active { color: var(--x-clean-ui-quote-toggle-color, #1d9bf0); opacity: 1; text-decoration: underline; }
 .${quoteToggleClass}:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }`;
   (document.head || document.documentElement).appendChild(style);
   const pageLocation = window.location;

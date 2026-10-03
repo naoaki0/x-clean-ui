@@ -151,19 +151,26 @@ test('quote toggle expands inline without parent navigation, while quote and med
   assert.equal(text.classList.contains('x-clean-ui-quote-clamped'), true);
 });
 
-test('quote toggles match the native Show more presentation, hover only the label, and follow late controls and theme changes', async (t) => {
+test('quote toggles stay subtle until interaction, emphasize only the label, and follow late controls and theme changes', async (t) => {
   const window = setup(t, post('appearance', '', '通常の本文', quote('styled-quote', 6)), 'https://x.com/home', quoteLayout);
   const { document } = window;
   await quoteTick(window);
   const button = document.querySelector('#styled-quote .x-clean-ui-quote-toggle');
   const rules = [...document.styleSheets[0].cssRules];
   const baseRule = rules.find((rule) => rule.selectorText === '.x-clean-ui-quote-toggle');
-  const hoverRule = rules.find((rule) => rule.selectorText === '.x-clean-ui-quote-toggle:hover');
+  const interactionRule = rules.find((rule) => rule.selectorText === '.x-clean-ui-quote-toggle:hover, .x-clean-ui-quote-toggle:focus-visible, .x-clean-ui-quote-toggle:active');
+  const focusRule = rules.find((rule) => rule.selectorText === '.x-clean-ui-quote-toggle:focus-visible');
   assert.equal(baseRule.style.getPropertyValue('text-decoration'), 'none');
   assert.equal(baseRule.style.getPropertyValue('width'), 'fit-content', 'hover target is the label, not the whole row');
   assert.equal(baseRule.style.getPropertyValue('margin'), '0');
-  assert.equal(hoverRule.style.getPropertyValue('text-decoration'), 'underline');
-  assert.ok(baseRule.style.getPropertyValue('color').includes('#1d9bf0'), 'X blue is the fallback without a native control');
+  assert.equal(baseRule.style.getPropertyValue('color'), 'inherit', 'the resting label is neutral, not an accent-colored link');
+  assert.equal(baseRule.style.getPropertyValue('opacity'), '0.55');
+  assert.equal(baseRule.style.getPropertyValue('font-size'), 'calc(var(--x-clean-ui-quote-toggle-font-size, 1em) * 0.85)');
+  assert.equal(baseRule.style.getPropertyValue('display'), 'block', 'touch users can discover the label without hovering');
+  assert.equal(interactionRule.style.getPropertyValue('text-decoration'), 'underline');
+  assert.equal(interactionRule.style.getPropertyValue('opacity'), '1');
+  assert.ok(interactionRule.style.getPropertyValue('color').includes('#1d9bf0'), 'X blue emphasizes interaction without a native control');
+  assert.equal(focusRule.style.getPropertyValue('outline'), '2px solid currentColor');
 
   const originalQuery = document.querySelectorAll.bind(document);
   let scans = 0;
