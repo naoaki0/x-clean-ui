@@ -95,7 +95,7 @@ test('only media quote text over three rendered lines is clamped; main text, sho
     const text = document.getElementById(`${id}-text`);
     assert.equal(window.getComputedStyle(text).getPropertyValue('-webkit-line-clamp'), '3');
     assert.equal(document.getElementById(id).querySelectorAll('.x-clean-ui-quote-toggle').length, 1);
-    assert.equal(text.nextSibling.textContent, '続きを読む');
+    assert.equal(text.nextSibling.textContent, 'さらに表示');
   }
   for (const id of ['short', 'exact', 'text-only']) {
     assert.equal(document.getElementById(id).querySelector('.x-clean-ui-quote-toggle'), null);
@@ -141,7 +141,7 @@ test('quote toggle expands inline without parent navigation, while quote and med
   button.click();
   await quoteTick(window);
   assert.equal(text.classList.contains('x-clean-ui-quote-clamped'), true);
-  assert.equal(button.textContent, '続きを読む');
+  assert.equal(button.textContent, 'さらに表示');
   assert.equal(button.getAttribute('aria-expanded'), 'false');
   assert.equal(parentClicks, 0);
   document.getElementById('interactive-media').click();
@@ -172,7 +172,7 @@ test('dynamic quote updates are idempotent, reset reused text, respond to width 
   assert.equal(button.textContent, '折りたたむ', 'listener is not duplicated');
   text.className = '';
   await quoteTick(window);
-  assert.equal(button.textContent, '続きを読む');
+  assert.equal(button.textContent, 'さらに表示');
   assert.equal(text.classList.contains('x-clean-ui-quote-clamped'), true);
 
   text.dataset.testLines = '2';

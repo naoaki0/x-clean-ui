@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         x-clean-UI
 // @namespace    https://x.com/
-// @version      0.8.0
+// @version      0.8.1
 // @description  Simplify X posts and open the first visible custom Home timeline.
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -263,7 +263,7 @@ ${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass}, 
       button.remove();
       return;
     }
-    const label = state.expanded ? '折りたたむ' : '続きを読む';
+    const label = state.expanded ? '折りたたむ' : 'さらに表示';
     if (button.textContent !== label) button.textContent = label;
     button.setAttribute('aria-expanded', String(state.expanded));
     if (text.nextSibling !== button) text.after(button);
