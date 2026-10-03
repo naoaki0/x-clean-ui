@@ -726,7 +726,8 @@ test('iPhone-style home tabs outside main and primaryColumn restore For you and 
     assert.equal(window.getComputedStyle(tab).display === 'none', index === 1, tab.textContent);
   }
   await tick(window);
-  assert.deepEqual(clicks, ['テック']);
+  assert.deepEqual(clicks, []);
+  assert.equal(tabs[0].getAttribute('aria-selected'), 'true');
 });
 
 test('new mobile home tablists are processed locally and never affect non-home tablists', async (t) => {
@@ -795,59 +796,60 @@ test('new or rerendered home tabs update without scanning the document again', a
   assert.equal(scans, 0);
 });
 
-test('opens the first currently rendered custom timeline, regardless of its name or order', async (t) => {
-  const window = setup(t, selectableTabs(['おすすめ', 'フォロー中', 'サッカー', 'AI', 'ゲーム'], 0));
+test('opens recommendations on Home entry even when X saved a custom timeline selection', async (t) => {
+  const window = setup(t, selectableTabs(['おすすめ', 'フォロー中', 'サッカー', 'AI', 'ゲーム'], 2));
   const { tabs, clicks } = trackSelections(window);
   await tick(window);
-  assert.deepEqual(clicks, ['サッカー']);
-  assert.equal(tabs[2].getAttribute('aria-selected'), 'true');
+  assert.deepEqual(clicks, ['おすすめ']);
+  assert.equal(tabs[0].getAttribute('aria-selected'), 'true');
   assert.equal(tabs[0].classList.contains('x-clean-ui-home-tab'), false);
   assert.equal(tabs[3].classList.contains('x-clean-ui-home-tab'), false);
 });
 
-test('restored recommendations remain selectable through rerenders on desktop and mobile in both languages', async (t) => {
+test('recommendations open by default but manual lists survive rerenders on desktop and mobile in both languages', async (t) => {
   for (const builder of [selectableTabs, mobileHomeTabs]) {
     for (const labels of [['おすすめ', 'フォロー中', 'AI'], ['For you', 'Following', 'AI']]) {
-      const window = setup(t, builder(labels, 0));
+      const window = setup(t, builder(labels, 2));
       const { document } = window;
       const { tabs, clicks } = trackSelections(window);
       await tick(window);
       await tick(window);
-      assert.deepEqual(clicks, ['AI'], 'initial custom timeline preference is preserved');
-      (tabs[0].querySelector('span') || tabs[0]).click();
+      assert.deepEqual(clicks, [labels[0]], 'recommendations replace the saved custom selection');
+      (tabs[2].querySelector('span') || tabs[2]).click();
       await tick(window);
       await tick(window);
-      assert.deepEqual(clicks, ['AI', labels[0]], 'manual recommendations must not be switched away');
-      assert.equal(tabs[0].getAttribute('aria-selected'), 'true');
+      assert.deepEqual(clicks, [labels[0], 'AI'], 'manual lists must not be switched away');
+      assert.equal(tabs[2].getAttribute('aria-selected'), 'true');
       assert.notEqual(window.getComputedStyle(tabs[0]).display, 'none');
       const list = document.querySelector('[role="tablist"]');
       list.replaceWith(list.cloneNode(true));
       await tick(window);
       await tick(window);
       const refreshed = trackSelections(window);
-      assert.equal(refreshed.tabs[0].getAttribute('aria-selected'), 'true', 'selection survives React tablist replacement');
+      assert.equal(refreshed.tabs[2].getAttribute('aria-selected'), 'true', 'selection survives React tablist replacement');
       window.history.pushState({}, '', '/explore');
       window.dispatchEvent(new window.PopStateEvent('popstate'));
       window.history.pushState({}, '', '/home');
       window.dispatchEvent(new window.PopStateEvent('popstate'));
       await tick(window);
       await tick(window);
-      assert.deepEqual(refreshed.clicks, ['AI'], 'a new Home visit resumes the initial custom timeline preference');
+      assert.deepEqual(refreshed.clicks, [labels[0]], 'a new Home visit selects recommendations again');
     }
   }
 });
 
-test('does not switch away from an already selected custom timeline after a reorder', async (t) => {
-  const window = setup(t, selectableTabs(['For you', 'Following', 'Technology', 'Gaming'], 3));
+test('does not switch away from a manually selected custom timeline after a reorder', async (t) => {
+  const window = setup(t, selectableTabs(['For you', 'Following', 'Technology', 'Gaming'], 0));
   const { tabs, clicks } = trackSelections(window);
   await tick(window);
+  tabs[3].click();
   tabs[3].before(tabs[2]);
   await tick(window);
-  assert.deepEqual(clicks, []);
+  assert.deepEqual(clicks, ['Gaming']);
   assert.equal(tabs[3].getAttribute('aria-selected'), 'true');
 });
 
-test('waits for a custom tab to render and uses its current position on SPA home entry', async (t) => {
+test('late custom tabs do not displace recommendations on initial or SPA home entry', async (t) => {
   const window = setup(t, selectableTabs(['おすすめ', 'フォロー中'], 0), 'https://twitter.com/home');
   Object.defineProperty(window, 'innerWidth', { value: 390 });
   const { tabs, clicks } = trackSelections(window);
@@ -868,7 +870,7 @@ test('waits for a custom tab to render and uses its current position on SPA home
   });
   await tick(window);
   await tick(window);
-  assert.deepEqual(clicks, ['ゲーム']);
+  assert.deepEqual(clicks, []);
 
   window.history.pushState({}, '', '/explore');
   window.document.body.append(window.document.createElement('div'));
@@ -884,38 +886,62 @@ test('waits for a custom tab to render and uses its current position on SPA home
   for (const tab of [...tabs, first]) tab.setAttribute('aria-selected', String(tab === tabs[0]));
   await tick(window);
   await tick(window);
-  assert.deepEqual(clicks, ['ゲーム', 'サッカー']);
+  assert.deepEqual(clicks, []);
 });
 
-test('waits for X to mark a selected tab before switching and follows reordered lists', async (t) => {
+test('waits for a late recommendation tab to become enabled before selecting it', async (t) => {
+  const window = setup(t, selectableTabs(['AI', 'Following'], 0));
+  const { document } = window;
+  const initial = trackSelections(window);
+  await tick(window);
+  assert.deepEqual(initial.clicks, []);
+  const recommended = document.createElement('a');
+  recommended.setAttribute('role', 'tab');
+  recommended.setAttribute('aria-selected', 'false');
+  recommended.setAttribute('aria-disabled', 'true');
+  recommended.textContent = 'For you';
+  document.querySelector('[role="tablist"]').prepend(recommended);
+  const { clicks } = trackSelections(window);
+  await tick(window);
+  await tick(window);
+  assert.deepEqual(clicks, []);
+  recommended.removeAttribute('aria-disabled');
+  await tick(window);
+  await tick(window);
+  assert.deepEqual(clicks, ['For you']);
+  assert.equal(recommended.getAttribute('aria-selected'), 'true');
+});
+
+test('waits for X to mark a selected tab before switching to recommendations', async (t) => {
   const window = setup(t, selectableTabs(['おすすめ', 'フォロー中', 'AI', 'サッカー'], -1));
   const { tabs, clicks } = trackSelections(window);
   await tick(window);
   assert.deepEqual(clicks, []);
   tabs[2].before(tabs[3]);
-  tabs[0].setAttribute('aria-selected', 'true');
+  tabs[2].setAttribute('aria-selected', 'true');
   await tick(window);
   await tick(window);
-  assert.deepEqual(clicks, ['サッカー']);
+  assert.deepEqual(clicks, ['おすすめ']);
 });
 
-test('a selected custom list remains selected until removed; then the next available list opens', async (t) => {
-  const window = setup(t, selectableTabs(['For you', 'Following', 'AI', 'Gaming'], 2));
+test('removing a manually selected list leaves X native fallback instead of forcing another list', async (t) => {
+  const window = setup(t, selectableTabs(['For you', 'Following', 'AI', 'Gaming'], 0));
   const { tabs, clicks } = trackSelections(window);
   await tick(window);
   assert.deepEqual(clicks, []);
+  tabs[2].click();
   tabs[2].remove();
   tabs[0].setAttribute('aria-selected', 'true');
   await tick(window);
   await tick(window);
-  assert.deepEqual(clicks, ['Gaming']);
+  assert.deepEqual(clicks, ['AI']);
 });
 
 test('a list URL identifies a custom tab even when its name matches a standard tab', async (t) => {
   const window = setup(t, selectableTabs(['For you', 'Following', 'Following', 'AI'], 0));
   const { tabs, clicks } = trackSelections(window);
   await tick(window);
-  assert.deepEqual(clicks, ['Following']);
+  assert.deepEqual(clicks, []);
   assert.ok(tabs[1].classList.contains('x-clean-ui-home-tab'));
   assert.equal(tabs[2].classList.contains('x-clean-ui-home-tab'), false);
 });

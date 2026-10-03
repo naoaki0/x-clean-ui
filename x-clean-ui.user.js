@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         x-clean-UI
 // @namespace    https://x.com/
-// @version      0.8.10
-// @description  Simplify X posts and open the first visible custom Home timeline.
+// @version      0.8.11
+// @description  Simplify X posts and open the For you Home timeline.
 // @match        https://x.com/*
 // @match        https://twitter.com/*
 // @updateURL    https://naoaki0.github.io/x-clean-ui/x-clean-ui.meta.js
@@ -76,7 +76,7 @@ ${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass}, 
   let homeTabList = null;
   let lastPath = pageLocation.pathname;
   let pendingTab = null;
-  let keepRecommendedTimeline = false;
+  let homeTimelineChosen = false;
   let homeCheckTimer = null;
 
   function isHome() {
@@ -108,23 +108,23 @@ ${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass}, 
     return isDefaultTab(tab) && /^(?:フォロー中|Following)$/.test(label);
   }
 
-  function openFirstCustomTimeline() {
-    if (!isHome() || !homeTabList?.isConnected || keepRecommendedTimeline) return;
+  function openRecommendedTimeline() {
+    if (!isHome() || !homeTabList?.isConnected || homeTimelineChosen) return;
     const tabs = [...homeTabList.querySelectorAll('[role="tab"]')]
       .filter((tab) => tab.closest('[role="tablist"]') === homeTabList);
     const selected = tabs.find((tab) => tab.getAttribute('aria-selected') === 'true');
-    // Wait until X has rendered both a selected tab and at least one custom tab.
+    // Wait until X has rendered its saved selection before overriding it once.
     if (!selected) return;
-    const custom = tabs.filter((tab) => !isDefaultTab(tab) &&
+    const recommended = tabs.find((tab) => isDefaultTab(tab) && !isHiddenHomeTab(tab) &&
       !tab.hasAttribute('disabled') && tab.getAttribute('aria-disabled') !== 'true');
-    if (custom.includes(selected)) {
+    if (recommended === selected) {
       pendingTab = null;
+      homeTimelineChosen = true;
       return;
     }
-    const first = custom[0];
-    if (first && pendingTab !== first) {
-      pendingTab = first;
-      first.click();
+    if (recommended && pendingTab !== recommended) {
+      pendingTab = recommended;
+      recommended.click();
     }
   }
 
@@ -132,7 +132,7 @@ ${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass}, 
     if (homeCheckTimer !== null) return;
     homeCheckTimer = window.setTimeout(() => {
       homeCheckTimer = null;
-      openFirstCustomTimeline();
+      openRecommendedTimeline();
     }, 0);
   }
 
@@ -476,12 +476,12 @@ ${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass}, 
     for (const descendant of element.querySelectorAll(homeTabSelector)) tabs.add(descendant);
   }
 
-  // Remember a deliberate recommendation selection before X updates aria-selected.
+  // Respect manual tab choices after entry, but do not treat our own click as one.
   document.addEventListener('click', (event) => {
     if (!isHome() || !(event.target instanceof Element)) return;
     const tab = event.target.closest(homeTabSelector);
     if (!tab || !isHomeTimelineList(tab.closest('[role="tablist"]'))) return;
-    keepRecommendedTimeline = isDefaultTab(tab) && !isHiddenHomeTab(tab);
+    if (tab !== pendingTab) homeTimelineChosen = true;
   }, true);
 
   // One initial scan; all subsequent scans are restricted to changed subtrees.
@@ -517,7 +517,7 @@ ${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass}, 
     if (pathChanged) {
       lastPath = pageLocation.pathname;
       pendingTab = null;
-      keepRecommendedTimeline = false;
+      homeTimelineChosen = false;
       // Route changes are rare; recheck tracked posts, not the whole document.
       for (const post of knownPosts) posts.add(post);
       if (homeTabList && homeTabList.isConnected) {
@@ -542,7 +542,7 @@ ${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass}, 
   window.addEventListener('popstate', () => {
     if (pageLocation.pathname !== lastPath) {
       pendingTab = null;
-      keepRecommendedTimeline = false;
+      homeTimelineChosen = false;
       for (const post of knownPosts) syncPost(post);
     }
     if (homeTabList && homeTabList.isConnected) {
