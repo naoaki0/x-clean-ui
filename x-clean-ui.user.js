@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         x-clean-UI
 // @namespace    https://x.com/
-// @version      0.8.12
+// @version      0.8.13
 // @description  Simplify X posts and open the first visible custom Home timeline.
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -52,6 +52,7 @@ ${postSelector}.${adClass}, [role="tab"].${homeTabClass}, .${postControlClass}, 
 @media (max-width: 767px) and (pointer: coarse) { .${quoteClampClass} { -webkit-line-clamp: 4 !important; line-clamp: 4; } }
 .${quoteExpandedClass} { display: block !important; -webkit-line-clamp: unset !important; line-clamp: unset; max-height: none !important; overflow: visible !important; }
 .${quoteToggleClass} { appearance: none; border: 0; border-radius: 0; background: none; color: inherit; opacity: 0.55; font: inherit; font-family: var(--x-clean-ui-quote-toggle-font-family, inherit); font-size: calc(var(--x-clean-ui-quote-toggle-font-size, 1em) * 0.85); font-weight: var(--x-clean-ui-quote-toggle-font-weight, inherit); font-style: var(--x-clean-ui-quote-toggle-font-style, inherit); line-height: var(--x-clean-ui-quote-toggle-line-height, inherit); letter-spacing: var(--x-clean-ui-quote-toggle-letter-spacing, inherit); padding: 0; margin: 0; display: block; width: fit-content; align-self: flex-start; text-align: start; text-decoration: none; cursor: pointer; }
+@media (min-width: 768px) and (hover: hover) and (pointer: fine) { .${quoteToggleClass} { margin-block: -2px; } }
 .${quoteToggleClass}:hover, .${quoteToggleClass}:focus-visible, .${quoteToggleClass}:active { color: var(--x-clean-ui-quote-toggle-color, #1d9bf0); opacity: 1; text-decoration: underline; }
 .${quoteToggleClass}:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }`;
   (document.head || document.documentElement).appendChild(style);

@@ -214,6 +214,10 @@ test('quote toggles stay subtle until interaction, emphasize only the label, and
   assert.equal(baseRule.style.getPropertyValue('text-decoration'), 'none');
   assert.equal(baseRule.style.getPropertyValue('width'), 'fit-content', 'hover target is the label, not the whole row');
   assert.equal(baseRule.style.getPropertyValue('margin'), '0');
+  const desktopSpacing = rules.find((rule) => rule.conditionText === '(min-width: 768px) and (hover: hover) and (pointer: fine)');
+  assert.equal(desktopSpacing.cssRules.length, 1);
+  assert.equal(desktopSpacing.cssRules[0].selectorText, '.x-clean-ui-quote-toggle');
+  assert.equal(desktopSpacing.cssRules[0].style.getPropertyValue('margin-block'), '-2px');
   assert.equal(baseRule.style.getPropertyValue('color'), 'inherit', 'the resting label is neutral, not an accent-colored link');
   assert.equal(baseRule.style.getPropertyValue('opacity'), '0.55');
   assert.equal(baseRule.style.getPropertyValue('font-size'), 'calc(var(--x-clean-ui-quote-toggle-font-size, 1em) * 0.85)');
